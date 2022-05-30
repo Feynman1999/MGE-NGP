@@ -1,2 +1,2 @@
 # MGE-NGP
-A MegEngine CUDA extension implementation of instant-ngp (nerf)
+A MegEngine implementation of instant-ngp (nerf)
