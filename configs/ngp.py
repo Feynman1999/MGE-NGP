@@ -11,7 +11,7 @@ test_cfg = dict()
 
 # dataset settings
 dataset_type = "KittiDataset"
-data_root = "/data/"
+data_root = r"C:\Users\76397\Desktop\taichi\kitti\00"
 
 train_pipeline = [
     
@@ -28,17 +28,19 @@ data = dict(
         type=dataset_type,
         root_path=data_root,
         pipeline=train_pipeline,
+        mode = 'train'
     ),
     val=dict(
         type=dataset_type,
         root_path=data_root,
-        test_mode=True,
         pipeline=test_pipeline,
+        mode = 'eval'
     ),
     test=dict(
         type=dataset_type,
         root_path=data_root,
         pipeline=test_pipeline,
+        mode = 'test'
     ),
 )
 

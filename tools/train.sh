@@ -1,0 +1,1 @@
+python tools/train.py configs/ngp.py

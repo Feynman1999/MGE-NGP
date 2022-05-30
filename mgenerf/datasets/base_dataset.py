@@ -2,7 +2,6 @@ from megengine.data.dataset import Dataset
 from .pipelines.compose import Compose
 from abc import ABCMeta, abstractmethod
 
-
 class BaseDataset(Dataset, metaclass=ABCMeta):
     """Base class for Dataset.
     All datasets should subclass it.
@@ -37,8 +36,7 @@ class BaseDataset(Dataset, metaclass=ABCMeta):
         Returns:
             dict: Returned training batch.
         """
-        results = copy.deepcopy(self.data_infos[idx])
-        return self.pipeline(results)
+        return self.pipeline(self.data_infos[idx])
 
     def __len__(self):
         """Length of the dataset.

@@ -35,7 +35,10 @@ def main():
     if dist.get_rank() == 0:
         backup_dir = os.path.join(cfg.work_dir, "configs")
         os.makedirs(backup_dir, exist_ok=True)
-        os.system("cp %s %s/" % (args.config, backup_dir))
+        try:
+            os.system("cp %s %s/" % (args.config, backup_dir))
+        except:
+            pass
         logger.info(f"Backup config file to {cfg.work_dir}/det3d")
 
     datasets = [build_dataset(cfg.data.train)]
