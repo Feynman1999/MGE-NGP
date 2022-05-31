@@ -1,12 +1,50 @@
 import logging
 
-# model settings
-model = dict(
-    type="NGP",
-    
+embedder_view = dict(
+    type = "PositionalEncoding",
+    multires = 4,  #  log2 of max freq for positional encoding (2D direction)
+    log_sampling = True, 
+    include_input = True
 )
 
-train_cfg = dict()
+# model settings
+model = dict(
+    type="Coarse_Fine_Nerf",
+    coarse_net = dict(
+        type = 'NGP',
+        implicit_net = dict(
+            type = "MLP",
+            layers = 4, 
+            channels = 128,
+            input_dim = ,
+            output_dim = ,
+        ),
+        hash_net = dict(
+
+        ),
+        embedder_view = embedder_view
+    ),
+    fine_net = dict(
+        type = 'NGP',
+        implicit_net = dict(
+            type = "MLP",
+            layers = 4, 
+            channels = 128,
+            input_dim = ,
+            output_dim = ,
+        ),
+        hash_net = dict(
+            
+        ),
+        embedder_view = embedder_view
+    )
+)
+
+train_cfg = dict(
+    near = 0.3,
+    far = 10,
+)
+
 test_cfg = dict()
 
 # dataset settings

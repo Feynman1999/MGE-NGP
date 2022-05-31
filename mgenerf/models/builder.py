@@ -4,8 +4,6 @@ from mgenerf.utils import build_from_cfg
 from .registry import (
     BACKBONES,
     NERFS,
-    HEADS,
-    LOSSES,
 )
 
 
@@ -20,11 +18,6 @@ def build(cfg, registry, default_args=None):
 def build_backbone(cfg):
     return build(cfg, BACKBONES)
 
-def build_head(cfg):
-    return build(cfg, HEADS)
-
-def build_loss(cfg):
-    return build(cfg, LOSSES)
 
 def build_nerf(cfg, train_cfg=None, test_cfg=None):
     return build(cfg, NERFS, dict(train_cfg=train_cfg, test_cfg=test_cfg))

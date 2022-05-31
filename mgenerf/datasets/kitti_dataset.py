@@ -1,10 +1,10 @@
-from ast import Not
 from mgenerf.datasets.registry import DATASETS
 from mgenerf.datasets.base_dataset import BaseDataset
 import os
 import numpy as np
 import glob
 from .camera import CameraPoseTransform
+
 
 @DATASETS.register_module
 class KittiDataset(BaseDataset):
@@ -70,4 +70,5 @@ class KittiDataset(BaseDataset):
         return data_infos
         
     def evaluate(self, results):
+        assert self.mode == "eval"
         pass
