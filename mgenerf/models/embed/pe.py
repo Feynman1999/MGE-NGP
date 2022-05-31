@@ -1,11 +1,11 @@
 import megengine.functional as F
-import megengine.module as nn
+import megengine.module as M
 from ..registry import BACKBONES
 
 
 # Positional encoding (section 5.1)
 @BACKBONES.register_module
-class PositionalEncoding:
+class PositionalEncoding(M.Module):
     def __init__(self, multires, log_sampling = True, include_input = True):
 		self.input_dims = 2
 		self.multires = multires
@@ -38,5 +38,5 @@ class PositionalEncoding:
         self.embed_fns = embed_fns
         self.out_dim = out_dim
 
-    def embed(self, inputs):
+    def forward(self, inputs):
         return F.concat([fn(inputs) for fn in self.embed_fns], -1)

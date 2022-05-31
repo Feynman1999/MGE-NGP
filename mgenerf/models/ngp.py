@@ -1,9 +1,9 @@
 import megengine as mge
-from .registry import NERFS
+from .registry import BACKBONES
 import megengine.module as M
 
 
-@NERFS.register_module
+@BACKBONES.register_module
 class NGP(M.Module):
     def __init__(self, ):
         super(NGP, self).__init__()
