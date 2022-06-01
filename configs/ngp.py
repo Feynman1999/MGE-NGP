@@ -14,7 +14,7 @@ model = dict(
         log2_hashmap_size = 19,
         finest_res  = 512, 
         hash_net = dict(
-
+            type = "HashEncoding",
         ),
         implicit_net = dict(
             type = "MLP",
@@ -29,7 +29,7 @@ model = dict(
     fine_net = dict(
         type = 'NGP',
         hash_net = dict(
-            
+            type = "HashEncoding",
         ),
         implicit_net = dict(
             type = "MLP",
@@ -54,7 +54,7 @@ test_cfg = dict()
 
 # dataset settings
 dataset_type = "KittiDataset"
-data_root = r"C:\Users\76397\Desktop\taichi\kitti\00"
+data_root = "/data/dataset-3840/datasets/kitti/00" # r"C:\Users\76397\Desktop\taichi\kitti\00"
 
 train_pipeline = [
     
@@ -65,7 +65,7 @@ test_pipeline = [
 ]
 
 data = dict(
-    samples_per_gpu=4, # 每次随机选4个图  图内部会随机选32*32条光线
+    samples_per_gpu=4, # 4 * 1024
     workers_per_gpu=4,
     train=dict(
         type=dataset_type,
