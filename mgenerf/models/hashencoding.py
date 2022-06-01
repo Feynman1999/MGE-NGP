@@ -5,20 +5,25 @@ import megengine.module as M
 import megengine.functional as F
 from megengine.module import init
 
+
 BOX_OFFSETS = mge.tensor([[[i,j,k] for i in [0, 1] for j in [0, 1] for k in [0, 1]]], dtype = np.int32) # [1,8,3]
+
 
 def hash(coords, log2_hashmap_size):
     '''
     coords: this function can process upto 7 dim coordinates  [b,8,3]
     log2T:  logarithm of T w.r.t 2
     '''
+    coords = coords.numpy()
     primes = [1, 2654435761, 805459861, 3674653429, 2097192037, 1434869437, 2165219737]
     b, num , dim = coords.shape
-    xor_result = F.zeros((b,num), dtype=np.int32) # [b,8]
+    xor_result = np.zeros((b, num), dtype=np.int32) # [b,8]
+
     for i in range(dim):
         xor_result ^= coords[..., i]*primes[i]
 
-    return torch.tensor((1<<log2_hashmap_size)-1) & xor_result # 消除高位
+    return mge.tensor(((1<<log2_hashmap_size)-1) & xor_result, dtype=np.int32) # 消除高位
+
 
 def get_voxel_vertices(xyz, bounding_box, resolution, log2_hashmap_size):
     '''
@@ -34,7 +39,7 @@ def get_voxel_vertices(xyz, bounding_box, resolution, log2_hashmap_size):
         for i in range(3):
             xyz[:, i] = F.clip(xyz[:, i], lower=box_min[i], upper=box_max[i])
 
-    grid_size = (box_max - box_min) / resolution # 每个voxel的大小
+    grid_size = (box_max - box_min) / resolution # 每个voxel的实际大小
     
     bottom_left_idx = F.floor((xyz-box_min)/grid_size).astype(np.int32) # [B, 3]
     voxel_min_vertex = bottom_left_idx * grid_size + box_min
@@ -89,19 +94,19 @@ class HashEncoding(M.Module):
 
         # step 1
         # 0->000, 1->001, 2->010, 3->011, 4->100, 5->101, 6->110, 7->111
-        c00 = voxel_embedds[:,0]*(1-weights[:,0][:,None]) + voxel_embedds[:,4]*weights[:,0][:,None]
-        c01 = voxel_embedds[:,1]*(1-weights[:,0][:,None]) + voxel_embedds[:,5]*weights[:,0][:,None]
-        c10 = voxel_embedds[:,2]*(1-weights[:,0][:,None]) + voxel_embedds[:,6]*weights[:,0][:,None]
-        c11 = voxel_embedds[:,3]*(1-weights[:,0][:,None]) + voxel_embedds[:,7]*weights[:,0][:,None]
+        c00 = voxel_embedds[:,0]*(1-weights[:,0:1]) + voxel_embedds[:,4]*weights[:,0:1]
+        c01 = voxel_embedds[:,1]*(1-weights[:,0:1]) + voxel_embedds[:,5]*weights[:,0:1]
+        c10 = voxel_embedds[:,2]*(1-weights[:,0:1]) + voxel_embedds[:,6]*weights[:,0:1]
+        c11 = voxel_embedds[:,3]*(1-weights[:,0:1]) + voxel_embedds[:,7]*weights[:,0:1]
 
         # step 2
-        c0 = c00*(1-weights[:,1][:,None]) + c10*weights[:,1][:,None]
-        c1 = c01*(1-weights[:,1][:,None]) + c11*weights[:,1][:,None]
+        c0 = c00*(1-weights[:,1:2]) + c10*weights[:,1:2]
+        c1 = c01*(1-weights[:,1:2]) + c11*weights[:,1:2]
 
         # step 3
-        c = c0*(1-weights[:,2][:,None]) + c1*weights[:,2][:,None]
+        c = c0*(1-weights[:,2:3]) + c1*weights[:,2:3]
 
-        return c
+        return c # [b,2]
 
     def forward(self, x):
         # x is 3D point position: B x 3
@@ -111,7 +116,7 @@ class HashEncoding(M.Module):
             voxel_min_vertex, voxel_max_vertex, hashed_voxel_indices = get_voxel_vertices(x, self.bounding_box,
                                                 resolution, self.log2_hashmap_size)
             
-            voxel_embedds = self.embeddings[i](hashed_voxel_indices)
+            voxel_embedds = self.embeddings[i](hashed_voxel_indices) # input: [b, 8]  output: [b,8,2]
 
             x_embedded = self.trilinear_interp(x, voxel_min_vertex, voxel_max_vertex, voxel_embedds)
             x_embedded_all.append(x_embedded)

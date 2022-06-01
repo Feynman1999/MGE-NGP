@@ -4,6 +4,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 
+from hash_encoding import HashEmbedder, SHEncoder
 
 # Misc
 img2mse = lambda x, y : torch.mean((x - y) ** 2)
@@ -45,22 +46,31 @@ class Embedder:
         return torch.cat([fn(inputs) for fn in self.embed_fns], -1)
 
 
-def get_embedder(multires, i=0):
+def get_embedder(multires, args, i=0):
     if i == -1:
         return nn.Identity(), 3
-    
-    embed_kwargs = {
-                'include_input' : True,
-                'input_dims' : 3,
-                'max_freq_log2' : multires-1,
-                'num_freqs' : multires,
-                'log_sampling' : True,
-                'periodic_fns' : [torch.sin, torch.cos],
-    }
-    
-    embedder_obj = Embedder(**embed_kwargs)
-    embed = lambda x, eo=embedder_obj : eo.embed(x)
-    return embed, embedder_obj.out_dim
+    elif i==0:
+        embed_kwargs = {
+                    'include_input' : True,
+                    'input_dims' : 3,
+                    'max_freq_log2' : multires-1,
+                    'num_freqs' : multires,
+                    'log_sampling' : True,
+                    'periodic_fns' : [torch.sin, torch.cos],
+        }
+        
+        embedder_obj = Embedder(**embed_kwargs)
+        embed = lambda x, eo=embedder_obj : eo.embed(x)
+        out_dim = embedder_obj.out_dim
+    elif i==1:
+        embed = HashEmbedder(bounding_box=args.bounding_box, \
+                            log2_hashmap_size=args.log2_hashmap_size, \
+                            finest_resolution=args.finest_res)
+        out_dim = embed.out_dim
+    elif i==2:
+        embed = SHEncoder()
+        out_dim = embed.out_dim
+    return embed, out_dim
 
 
 # Model
@@ -146,6 +156,88 @@ class NeRF(nn.Module):
         idx_alpha_linear = 2 * self.D + 6
         self.alpha_linear.weight.data = torch.from_numpy(np.transpose(weights[idx_alpha_linear]))
         self.alpha_linear.bias.data = torch.from_numpy(np.transpose(weights[idx_alpha_linear+1]))
+
+
+# Small NeRF for Hash embeddings
+class NeRFSmall(nn.Module):
+    def __init__(self,
+                 num_layers=3,
+                 hidden_dim=64,
+                 geo_feat_dim=15,
+                 num_layers_color=4,
+                 hidden_dim_color=64,
+                 input_ch=3, input_ch_views=3,
+                 ):
+        super(NeRFSmall, self).__init__()
+
+        self.input_ch = input_ch
+        self.input_ch_views = input_ch_views
+
+        # sigma network
+        self.num_layers = num_layers
+        self.hidden_dim = hidden_dim
+        self.geo_feat_dim = geo_feat_dim
+
+        sigma_net = []
+        for l in range(num_layers):
+            if l == 0:
+                in_dim = self.input_ch
+            else:
+                in_dim = hidden_dim
+            
+            if l == num_layers - 1:
+                out_dim = 1 + self.geo_feat_dim # 1 sigma + 15 SH features for color
+            else:
+                out_dim = hidden_dim
+            
+            sigma_net.append(nn.Linear(in_dim, out_dim, bias=False))
+
+        self.sigma_net = nn.ModuleList(sigma_net)
+
+        # color network
+        self.num_layers_color = num_layers_color        
+        self.hidden_dim_color = hidden_dim_color
+        
+        color_net =  []
+        for l in range(num_layers_color):
+            if l == 0:
+                in_dim = self.input_ch_views + self.geo_feat_dim
+            else:
+                in_dim = hidden_dim
+            
+            if l == num_layers_color - 1:
+                out_dim = 3 # 3 rgb
+            else:
+                out_dim = hidden_dim
+            
+            color_net.append(nn.Linear(in_dim, out_dim, bias=False))
+
+        self.color_net = nn.ModuleList(color_net)
+    
+    def forward(self, x):
+        input_pts, input_views = torch.split(x, [self.input_ch, self.input_ch_views], dim=-1)
+
+        # sigma
+        h = input_pts
+        for l in range(self.num_layers):
+            h = self.sigma_net[l](h)
+            if l != self.num_layers - 1:
+                h = F.relu(h, inplace=True)
+
+        sigma, geo_feat = h[..., 0], h[..., 1:]
+        
+        # color
+        h = torch.cat([input_views, geo_feat], dim=-1)
+        for l in range(self.num_layers_color):
+            h = self.color_net[l](h)
+            if l != self.num_layers_color - 1:
+                h = F.relu(h, inplace=True)
+            
+        # color = torch.sigmoid(h)
+        color = h
+        outputs = torch.cat([color, sigma.unsqueeze(dim=-1)], -1)
+
+        return outputs
 
 
 

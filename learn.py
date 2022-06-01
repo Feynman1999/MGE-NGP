@@ -1,17 +1,24 @@
 import os, sys
+from datetime import datetime
 import numpy as np
 import imageio
 import json
+import pdb
 import random
 import time
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.distributions import Categorical
 from tqdm import tqdm, trange
+import pickle
 
 import matplotlib.pyplot as plt
 
 from run_nerf_helpers import *
+from optimizer import MultiOptimizer
+from radam import RAdam
+from loss import sigma_sparsity_loss, total_variation_loss
 
 from load_llff import load_llff_data
 from load_deepvoxels import load_dv_data
@@ -61,7 +68,7 @@ def batchify_rays(rays_flat, chunk=1024*32, **kwargs):
             if k not in all_ret:
                 all_ret[k] = []
             all_ret[k].append(ret[k])
-
+    
     all_ret = {k : torch.cat(all_ret[k], 0) for k in all_ret}
     return all_ret
 
@@ -146,6 +153,7 @@ def render_path(render_poses, hwf, K, chunk, render_kwargs, gt_imgs=None, savedi
 
     rgbs = []
     disps = []
+    psnrs = []
 
     t = time.time()
     for i, c2w in enumerate(tqdm(render_poses)):
@@ -157,11 +165,11 @@ def render_path(render_poses, hwf, K, chunk, render_kwargs, gt_imgs=None, savedi
         if i==0:
             print(rgb.shape, disp.shape)
 
-        """
         if gt_imgs is not None and render_factor==0:
             p = -10. * np.log10(np.mean(np.square(rgb.cpu().numpy() - gt_imgs[i])))
             print(p)
-        """
+            psnrs.append(p)
+        
 
         if savedir is not None:
             rgb8 = to8b(rgbs[-1])
@@ -171,6 +179,8 @@ def render_path(render_poses, hwf, K, chunk, render_kwargs, gt_imgs=None, savedi
 
     rgbs = np.stack(rgbs, 0)
     disps = np.stack(disps, 0)
+    if gt_imgs is not None and render_factor==0:
+        print("Avg PSNR over Test set: ", sum(psnrs)/len(psnrs))
 
     return rgbs, disps
 
@@ -178,22 +188,48 @@ def render_path(render_poses, hwf, K, chunk, render_kwargs, gt_imgs=None, savedi
 def create_nerf(args):
     """Instantiate NeRF's MLP model.
     """
-    embed_fn, input_ch = get_embedder(args.multires, args.i_embed)
+    embed_fn, input_ch = get_embedder(args.multires, args, i=args.i_embed)
+    if args.i_embed==1:
+        # hashed embedding table
+        embedding_params = list(embed_fn.parameters())
 
     input_ch_views = 0
     embeddirs_fn = None
     if args.use_viewdirs:
-        embeddirs_fn, input_ch_views = get_embedder(args.multires_views, args.i_embed)
+        # if using hashed for xyz, use SH for views
+        embeddirs_fn, input_ch_views = get_embedder(args.multires_views, args, i=args.i_embed_views)
+    
     output_ch = 5 if args.N_importance > 0 else 4
     skips = [4]
-    model = NeRF(D=args.netdepth, W=args.netwidth,
+    
+    if args.i_embed==1:
+        model = NeRFSmall(num_layers=2,
+                        hidden_dim=64,
+                        geo_feat_dim=15,
+                        num_layers_color=3,
+                        hidden_dim_color=64,
+                        input_ch=input_ch, input_ch_views=input_ch_views).to(device)
+    else:
+        model = NeRF(D=args.netdepth, W=args.netwidth,
                  input_ch=input_ch, output_ch=output_ch, skips=skips,
                  input_ch_views=input_ch_views, use_viewdirs=args.use_viewdirs).to(device)
     grad_vars = list(model.parameters())
 
     model_fine = None
+
+    # if args.i_embed==1:
+    #     args.N_importance = 0
+
     if args.N_importance > 0:
-        model_fine = NeRF(D=args.netdepth_fine, W=args.netwidth_fine,
+        if args.i_embed==1:
+            model_fine = NeRFSmall(num_layers=2,
+                        hidden_dim=64,
+                        geo_feat_dim=15,
+                        num_layers_color=3,
+                        hidden_dim_color=64,
+                        input_ch=input_ch, input_ch_views=input_ch_views).to(device)
+        else:
+            model_fine = NeRF(D=args.netdepth_fine, W=args.netwidth_fine,
                           input_ch=input_ch, output_ch=output_ch, skips=skips,
                           input_ch_views=input_ch_views, use_viewdirs=args.use_viewdirs).to(device)
         grad_vars += list(model_fine.parameters())
@@ -204,7 +240,16 @@ def create_nerf(args):
                                                                 netchunk=args.netchunk)
 
     # Create optimizer
-    optimizer = torch.optim.Adam(params=grad_vars, lr=args.lrate, betas=(0.9, 0.999))
+    if args.i_embed==1:
+        # sparse_opt = torch.optim.SparseAdam(embedding_params, lr=args.lrate, betas=(0.9, 0.99), eps=1e-15)
+        # dense_opt = torch.optim.Adam(grad_vars, lr=args.lrate, betas=(0.9, 0.99), weight_decay=1e-6)
+        # optimizer = MultiOptimizer(optimizers={"sparse_opt": sparse_opt, "dense_opt": dense_opt})
+        optimizer = RAdam([
+                            {'params': grad_vars, 'weight_decay': 1e-6},
+                            {'params': embedding_params, 'eps': 1e-15}
+                        ], lr=args.lrate, betas=(0.9, 0.99))
+    else:
+        optimizer = torch.optim.Adam(params=grad_vars, lr=args.lrate, betas=(0.9, 0.999))
 
     start = 0
     basedir = args.basedir
@@ -231,8 +276,11 @@ def create_nerf(args):
         model.load_state_dict(ckpt['network_fn_state_dict'])
         if model_fine is not None:
             model_fine.load_state_dict(ckpt['network_fine_state_dict'])
+        if args.i_embed==1:
+            embed_fn.load_state_dict(ckpt['embed_fn_state_dict'])
 
     ##########################
+    # pdb.set_trace()
 
     render_kwargs_train = {
         'network_query_fn' : network_query_fn,
@@ -241,6 +289,7 @@ def create_nerf(args):
         'network_fine' : model_fine,
         'N_samples' : args.N_samples,
         'network_fn' : model,
+        'embed_fn': embed_fn,
         'use_viewdirs' : args.use_viewdirs,
         'white_bkgd' : args.white_bkgd,
         'raw_noise_std' : args.raw_noise_std,
@@ -290,6 +339,7 @@ def raw2outputs(raw, z_vals, rays_d, raw_noise_std=0, white_bkgd=False, pytest=F
             noise = np.random.rand(*list(raw[...,3].shape)) * raw_noise_std
             noise = torch.Tensor(noise)
 
+    # sigma_loss = sigma_sparsity_loss(raw[...,3])
     alpha = raw2alpha(raw[...,3] + noise, dists)  # [N_rays, N_samples]
     # weights = alpha * tf.math.cumprod(1.-alpha + 1e-10, -1, exclusive=True)
     weights = alpha * torch.cumprod(torch.cat([torch.ones((alpha.shape[0], 1)), 1.-alpha + 1e-10], -1), -1)[:, :-1]
@@ -302,13 +352,19 @@ def raw2outputs(raw, z_vals, rays_d, raw_noise_std=0, white_bkgd=False, pytest=F
     if white_bkgd:
         rgb_map = rgb_map + (1.-acc_map[...,None])
 
-    return rgb_map, disp_map, acc_map, weights, depth_map
+    # Calculate weights sparsity loss
+    mask = weights.sum(-1) > 0.5
+    entropy = Categorical(probs = weights+1e-5).entropy()
+    sparsity_loss = entropy * mask
+
+    return rgb_map, disp_map, acc_map, weights, depth_map, sparsity_loss
 
 
 def render_rays(ray_batch,
                 network_fn,
                 network_query_fn,
                 N_samples,
+                embed_fn=None,
                 retraw=False,
                 lindisp=False,
                 perturb=0.,
@@ -380,14 +436,13 @@ def render_rays(ray_batch,
 
     pts = rays_o[...,None,:] + rays_d[...,None,:] * z_vals[...,:,None] # [N_rays, N_samples, 3]
 
-
 #     raw = run_network(pts)
     raw = network_query_fn(pts, viewdirs, network_fn)
-    rgb_map, disp_map, acc_map, weights, depth_map = raw2outputs(raw, z_vals, rays_d, raw_noise_std, white_bkgd, pytest=pytest)
+    rgb_map, disp_map, acc_map, weights, depth_map, sparsity_loss = raw2outputs(raw, z_vals, rays_d, raw_noise_std, white_bkgd, pytest=pytest)
 
     if N_importance > 0:
 
-        rgb_map_0, disp_map_0, acc_map_0 = rgb_map, disp_map, acc_map
+        rgb_map_0, disp_map_0, acc_map_0, sparsity_loss_0 = rgb_map, disp_map, acc_map, sparsity_loss
 
         z_vals_mid = .5 * (z_vals[...,1:] + z_vals[...,:-1])
         z_samples = sample_pdf(z_vals_mid, weights[...,1:-1], N_importance, det=(perturb==0.), pytest=pytest)
@@ -400,15 +455,16 @@ def render_rays(ray_batch,
 #         raw = run_network(pts, fn=run_fn)
         raw = network_query_fn(pts, viewdirs, run_fn)
 
-        rgb_map, disp_map, acc_map, weights, depth_map = raw2outputs(raw, z_vals, rays_d, raw_noise_std, white_bkgd, pytest=pytest)
+        rgb_map, disp_map, acc_map, weights, depth_map, sparsity_loss = raw2outputs(raw, z_vals, rays_d, raw_noise_std, white_bkgd, pytest=pytest)
 
-    ret = {'rgb_map' : rgb_map, 'disp_map' : disp_map, 'acc_map' : acc_map}
+    ret = {'rgb_map' : rgb_map, 'disp_map' : disp_map, 'acc_map' : acc_map, 'sparsity_loss': sparsity_loss}
     if retraw:
         ret['raw'] = raw
     if N_importance > 0:
         ret['rgb0'] = rgb_map_0
         ret['disp0'] = disp_map_0
         ret['acc0'] = acc_map_0
+        ret['sparsity_loss0'] = sparsity_loss_0
         ret['z_std'] = torch.std(z_samples, dim=-1, unbiased=False)  # [N_rays]
 
     for k in ret:
@@ -466,8 +522,10 @@ def config_parser():
                         help='set to 0. for no jitter, 1. for jitter')
     parser.add_argument("--use_viewdirs", action='store_true', 
                         help='use full 5D input instead of 3D')
-    parser.add_argument("--i_embed", type=int, default=0, 
-                        help='set 0 for default positional encoding, -1 for none')
+    parser.add_argument("--i_embed", type=int, default=1, 
+                        help='set 1 for hashed embedding, 0 for default positional encoding, 2 for spherical')
+    parser.add_argument("--i_embed_views", type=int, default=2, 
+                        help='set 1 for hashed embedding, 0 for default positional encoding, 2 for spherical')
     parser.add_argument("--multires", type=int, default=10, 
                         help='log2 of max freq for positional encoding (3D location)')
     parser.add_argument("--multires_views", type=int, default=4, 
@@ -523,11 +581,20 @@ def config_parser():
                         help='frequency of tensorboard image logging')
     parser.add_argument("--i_weights", type=int, default=10000, 
                         help='frequency of weight ckpt saving')
-    parser.add_argument("--i_testset", type=int, default=50000, 
+    parser.add_argument("--i_testset", type=int, default=1000, 
                         help='frequency of testset saving')
-    parser.add_argument("--i_video",   type=int, default=50000, 
+    parser.add_argument("--i_video",   type=int, default=5000, 
                         help='frequency of render_poses video saving')
 
+    parser.add_argument("--finest_res",   type=int, default=512, 
+                        help='finest resolultion for hashed embedding')
+    parser.add_argument("--log2_hashmap_size",   type=int, default=19, 
+                        help='log2 of hashmap size')
+    parser.add_argument("--sparse-loss-weight", type=float, default=1e-10,
+                        help='learning rate')
+    parser.add_argument("--tv-loss-weight", type=float, default=1e-6,
+                        help='learning rate')
+ 
     return parser
 
 
@@ -539,12 +606,14 @@ def train():
     # Load data
     K = None
     if args.dataset_type == 'llff':
-        images, poses, bds, render_poses, i_test = load_llff_data(args.datadir, args.factor,
+        images, poses, bds, render_poses, i_test, bounding_box = load_llff_data(args.datadir, args.factor,
                                                                   recenter=True, bd_factor=.75,
                                                                   spherify=args.spherify)
         hwf = poses[0,:3,-1]
         poses = poses[:,:3,:4]
+        args.bounding_box = bounding_box
         print('Loaded llff', images.shape, render_poses.shape, hwf, args.datadir)
+
         if not isinstance(i_test, list):
             i_test = [i_test]
 
@@ -567,7 +636,8 @@ def train():
         print('NEAR FAR', near, far)
 
     elif args.dataset_type == 'blender':
-        images, poses, render_poses, hwf, i_split = load_blender_data(args.datadir, args.half_res, args.testskip)
+        images, poses, render_poses, hwf, i_split, bounding_box = load_blender_data(args.datadir, args.half_res, args.testskip)
+        args.bounding_box = bounding_box
         print('Loaded blender', images.shape, render_poses.shape, hwf, args.datadir)
         i_train, i_val, i_test = i_split
 
@@ -624,7 +694,23 @@ def train():
 
     # Create log dir and copy the config file
     basedir = args.basedir
-    expname = args.expname
+    if args.i_embed==1:
+        args.expname += "_hashXYZ"
+    elif args.i_embed==0:
+        args.expname += "_posXYZ"
+    if args.i_embed_views==2:
+        args.expname += "_sphereVIEW"
+    elif args.i_embed_views==0:
+        args.expname += "_posVIEW"
+    args.expname += "_fine"+str(args.finest_res) + "_log2T"+str(args.log2_hashmap_size)
+    args.expname += "_lr"+str(args.lrate) + "_decay"+str(args.lrate_decay)
+    args.expname += "_RAdam"
+    if args.sparse_loss_weight > 0:
+        args.expname += "_sparse" + str(args.sparse_loss_weight)
+    args.expname += "_TV" + str(args.tv_loss_weight)
+    #args.expname += datetime.now().strftime('_%H_%M_%d_%m_%Y')
+    expname = args.expname   
+ 
     os.makedirs(os.path.join(basedir, expname), exist_ok=True)
     f = os.path.join(basedir, expname, 'args.txt')
     with open(f, 'w') as file:
@@ -698,7 +784,7 @@ def train():
         rays_rgb = torch.Tensor(rays_rgb).to(device)
 
 
-    N_iters = 200000 + 1
+    N_iters = 50000 + 1
     print('Begin')
     print('TRAIN views are', i_train)
     print('TEST views are', i_test)
@@ -707,10 +793,12 @@ def train():
     # Summary writers
     # writer = SummaryWriter(os.path.join(basedir, 'summaries', expname))
     
+    loss_list = []
+    psnr_list = []
+    time_list = []
     start = start + 1
+    time0 = time.time()
     for i in trange(start, N_iters):
-        time0 = time.time()
-
         # Sample random ray batch
         if use_batching:
             # Random over all images
@@ -772,7 +860,25 @@ def train():
             loss = loss + img_loss0
             psnr0 = mse2psnr(img_loss0)
 
+        sparsity_loss = args.sparse_loss_weight*(extras["sparsity_loss"].sum() + extras["sparsity_loss0"].sum())
+        loss = loss + sparsity_loss
+       
+        # add Total Variation loss
+        if args.i_embed==1:
+            n_levels = render_kwargs_train["embed_fn"].n_levels
+            min_res = render_kwargs_train["embed_fn"].base_resolution
+            max_res = render_kwargs_train["embed_fn"].finest_resolution
+            log2_hashmap_size = render_kwargs_train["embed_fn"].log2_hashmap_size
+            TV_loss = sum(total_variation_loss(render_kwargs_train["embed_fn"].embeddings[i], \
+                                              min_res, max_res, \
+                                              i, log2_hashmap_size, \
+                                              n_levels=n_levels) for i in range(n_levels))
+            loss = loss + args.tv_loss_weight * TV_loss
+            if i>1000:
+                args.tv_loss_weight = 0.0
+ 
         loss.backward()
+        # pdb.set_trace()
         optimizer.step()
 
         # NOTE: IMPORTANT!
@@ -784,19 +890,28 @@ def train():
             param_group['lr'] = new_lrate
         ################################
 
-        dt = time.time()-time0
+        t = time.time()-time0
         # print(f"Step: {global_step}, Loss: {loss}, Time: {dt}")
         #####           end            #####
 
         # Rest is logging
         if i%args.i_weights==0:
             path = os.path.join(basedir, expname, '{:06d}.tar'.format(i))
-            torch.save({
-                'global_step': global_step,
-                'network_fn_state_dict': render_kwargs_train['network_fn'].state_dict(),
-                'network_fine_state_dict': render_kwargs_train['network_fine'].state_dict(),
-                'optimizer_state_dict': optimizer.state_dict(),
-            }, path)
+            if args.i_embed==1:
+                torch.save({
+                    'global_step': global_step,
+                    'network_fn_state_dict': render_kwargs_train['network_fn'].state_dict(),
+                    'network_fine_state_dict': render_kwargs_train['network_fine'].state_dict(),
+                    'embed_fn_state_dict': render_kwargs_train['embed_fn'].state_dict(),
+                    'optimizer_state_dict': optimizer.state_dict(),
+                }, path)
+            else:
+                torch.save({
+                    'global_step': global_step,
+                    'network_fn_state_dict': render_kwargs_train['network_fn'].state_dict(),
+                    'network_fine_state_dict': render_kwargs_train['network_fine'].state_dict(),
+                    'optimizer_state_dict': optimizer.state_dict(),
+                }, path)
             print('Saved checkpoints at', path)
 
         if i%args.i_video==0 and i > 0:
@@ -827,48 +942,17 @@ def train():
     
         if i%args.i_print==0:
             tqdm.write(f"[TRAIN] Iter: {i} Loss: {loss.item()}  PSNR: {psnr.item()}")
-        """
-            print(expname, i, psnr.numpy(), loss.numpy(), global_step.numpy())
-            print('iter time {:.05f}'.format(dt))
-
-            with tf.contrib.summary.record_summaries_every_n_global_steps(args.i_print):
-                tf.contrib.summary.scalar('loss', loss)
-                tf.contrib.summary.scalar('psnr', psnr)
-                tf.contrib.summary.histogram('tran', trans)
-                if args.N_importance > 0:
-                    tf.contrib.summary.scalar('psnr0', psnr0)
-
-
-            if i%args.i_img==0:
-
-                # Log a rendered validation view to Tensorboard
-                img_i=np.random.choice(i_val)
-                target = images[img_i]
-                pose = poses[img_i, :3,:4]
-                with torch.no_grad():
-                    rgb, disp, acc, extras = render(H, W, focal, chunk=args.chunk, c2w=pose,
-                                                        **render_kwargs_test)
-
-                psnr = mse2psnr(img2mse(rgb, target))
-
-                with tf.contrib.summary.record_summaries_every_n_global_steps(args.i_img):
-
-                    tf.contrib.summary.image('rgb', to8b(rgb)[tf.newaxis])
-                    tf.contrib.summary.image('disp', disp[tf.newaxis,...,tf.newaxis])
-                    tf.contrib.summary.image('acc', acc[tf.newaxis,...,tf.newaxis])
-
-                    tf.contrib.summary.scalar('psnr_holdout', psnr)
-                    tf.contrib.summary.image('rgb_holdout', target[tf.newaxis])
-
-
-                if args.N_importance > 0:
-
-                    with tf.contrib.summary.record_summaries_every_n_global_steps(args.i_img):
-                        tf.contrib.summary.image('rgb0', to8b(extras['rgb0'])[tf.newaxis])
-                        tf.contrib.summary.image('disp0', extras['disp0'][tf.newaxis,...,tf.newaxis])
-                        tf.contrib.summary.image('z_std', extras['z_std'][tf.newaxis,...,tf.newaxis])
-        """
-
+            loss_list.append(loss.item())
+            psnr_list.append(psnr.item())
+            time_list.append(t)
+            loss_psnr_time = {
+                "losses": loss_list,
+                "psnr": psnr_list,
+                "time": time_list
+            }
+            with open(os.path.join(basedir, expname, "loss_vs_time.pkl"), "wb") as fp:
+                pickle.dump(loss_psnr_time, fp)
+        
         global_step += 1
 
 

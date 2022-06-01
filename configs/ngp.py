@@ -46,6 +46,8 @@ model = dict(
 train_cfg = dict(
     near = 0.3,
     far = 10,
+    N_samples = 64,  # number of coarse samples per ray
+    N_importance = 32,  # number of additional fine samples per ray
 )
 
 test_cfg = dict()
@@ -63,7 +65,7 @@ test_pipeline = [
 ]
 
 data = dict(
-    samples_per_gpu=2,
+    samples_per_gpu=4, # 每次随机选4个图  图内部会随机选32*32条光线
     workers_per_gpu=4,
     train=dict(
         type=dataset_type,
@@ -103,7 +105,7 @@ log_config = dict(
 
 total_epochs = 20
 log_level = "INFO"
-work_dir = "./experiments/pointpillars"
+work_dir = "./workdirs/ngp"
 load_from = None 
 resume_from = None
 workflow = [("train", 1), ("val", 1)]
