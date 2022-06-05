@@ -47,17 +47,19 @@ def raw2outputs(raw, z_vals, rays_d, raw_noise_std=0, white_bkgd=False):
     dists = F.concat([dists, F.full(dists[..., :1].shape, 1e10)], -1)  # [N_rays, N_samples]
     # 距离间隔系数（不是真正距离）
 
-    dists = dists * F.norm(rays_d[...,None,:], axis=-1) # [N_rays, N_samples]
+    dists = dists * F.norm(rays_d[..., None, :], axis=-1) # [N_rays, N_samples]
 
-    rgb = F.sigmoid(raw[...,:3])  # [N_rays, N_samples, 3]
+    rgb = F.sigmoid(raw[..., :3])  # [N_rays, N_samples, 3]
+    
     noise = 0.
     if raw_noise_std > 0.:
         noise = mge.random.normal(size=raw[..., 3].shape) * raw_noise_std
 
     # sigma_loss = sigma_sparsity_loss(raw[...,3])
-    alpha, before_exp = raw2alpha(raw[...,3] + noise, dists)  # [N_rays, N_samples]
-    weights = alpha * F.exp( 
-        F.cumsum(F.concat([F.zeros((before_exp.shape[0], 1)), before_exp], -1), axis=1)[:, :-1]
+    alpha, before_exp = raw2alpha(raw[..., 3] + noise, dists)  # [N_rays, N_samples]
+    N_rays = before_exp.shape[0]
+    weights = alpha * F.exp(
+        F.cumsum(F.concat([F.zeros((N_rays, 1)), before_exp], -1), axis=1)[:, :-1]
     )
 
     rgb_map = F.sum(F.expand_dims(weights, axis=-1) * rgb, -2)  # [N_rays, 3]
@@ -88,7 +90,7 @@ def raw2outputs(raw, z_vals, rays_d, raw_noise_std=0, white_bkgd=False):
 
     return rgb_map, disp_map, acc_map, weights, depth_map, sparsity_loss
 
-def render_rays(ray_batch,
+def render_rays(rays_o, rays_d, near, far, viewdirs,
                 N_samples,
                 N_importance,
                 coarse_net,
@@ -99,12 +101,6 @@ def render_rays(ray_batch,
                 white_bkgd=False,
                 raw_noise_std=0.,
                 **kwargs):
-    rays_o, rays_d = ray_batch[:, 0:3], ray_batch[:, 3:6] # [N_rays, 3] each
-    viewdirs = ray_batch[:,-3:]
-    bounds = F.reshape(ray_batch[..., 6:8], [-1,1,2]) # [B, 1, 2]
-
-    near, far = bounds[..., 0], bounds[..., 1] # [b,1]
-
     t_vals = F.linspace(0., 1., num=N_samples)
 
     if not lindisp:
@@ -126,44 +122,40 @@ def render_rays(ray_batch,
     # [b, 64, 4]
 
     rgb_map, disp_map, acc_map, weights, depth_map, sparsity_loss = raw2outputs(raw, z_vals, rays_d, raw_noise_std, white_bkgd)
-    # [b, 3]  [b, ] [b, ] [b, 64] [b, ] [b, ]
+    # # [b, 3]  [b, ] [b, ] [b, 64] [b, ] [b, ]
 
-    # sample 
-    rgb_map_0, disp_map_0, acc_map_0, sparsity_loss_0 = rgb_map, disp_map, acc_map, sparsity_loss
+    # # sample 
+    # rgb_map_0, disp_map_0, acc_map_0, sparsity_loss_0 = rgb_map, disp_map, acc_map, sparsity_loss
 
-    z_vals_mid = .5 * (z_vals[...,1:] + z_vals[...,:-1])
-    z_samples = sample_pdf(z_vals_mid, weights[...,1:-1], N_importance, det=(perturb==0.))
-    z_samples = z_samples.detach()
+    # z_vals_mid = .5 * (z_vals[...,1:] + z_vals[...,:-1])
+    # z_samples = sample_pdf(z_vals_mid, weights[...,1:-1], N_importance, det=(perturb==0.))
+    # z_samples = z_samples.detach()
 
-    z_vals, _ = F.sort(F.concat([z_vals, z_samples], -1), descending=False)
+    # z_vals, _ = F.sort(F.concat([z_vals, z_samples], -1), descending=False)
     
-    pts = rays_o[..., None, :] + rays_d[..., None, :] * z_vals[..., :, None] # [N_rays, N_samples + N_importance, 3]
+    # pts = rays_o[..., None, :] + rays_d[..., None, :] * z_vals[..., :, None] # [N_rays, N_samples + N_importance, 3]
 
-    raw = fine_net(pts, viewdirs)
+    # raw = fine_net(pts, viewdirs)
 
-    rgb_map, disp_map, acc_map, weights, depth_map, sparsity_loss = raw2outputs(raw, z_vals, rays_d, raw_noise_std, white_bkgd)
+    # rgb_map, disp_map, acc_map, weights, depth_map, sparsity_loss = raw2outputs(raw, z_vals, rays_d, raw_noise_std, white_bkgd)
 
     ret = {'rgb_map' : rgb_map, 'disp_map' : disp_map, 'acc_map' : acc_map, 'sparsity_loss': sparsity_loss}
     if retraw:
         ret['raw'] = raw
 
-    ret['rgb0'] = rgb_map_0
-    ret['disp0'] = disp_map_0
-    ret['acc0'] = acc_map_0
-    ret['sparsity_loss0'] = sparsity_loss_0
-    ret['z_std'] = F.std(z_samples, axis=-1)  # [N_rays]
+    # ret['rgb0'] = rgb_map_0
+    # ret['disp0'] = disp_map_0
+    # ret['acc0'] = acc_map_0
+    # ret['sparsity_loss0'] = sparsity_loss_0
+    # ret['z_std'] = F.std(z_samples, axis=-1)  # [N_rays]
 
     return ret
 
 def render(rays_o, rays_d, near = 0., far = 1., **kwargs):
-    viewdirs = rays_d # [x, 3]
-    viewdirs = viewdirs / F.norm(viewdirs, axis=1, keepdims=True) # [x, 3]
+    viewdirs = rays_d / F.norm(rays_d, axis=1, keepdims=True) # [x, 3]
+    near, far = near * F.ones_like(rays_d[..., :1]), far * F.ones_like(rays_d[..., :1])
     
-    near, far = near * F.ones_like(rays_d[...,:1]), far * F.ones_like(rays_d[...,:1])
-    rays = F.concat([rays_o, rays_d, near, far, viewdirs], axis=-1) # [x, 11]
-
-    # Render and reshape
-    all_ret = render_rays(rays, **kwargs)
+    all_ret = render_rays(rays_o, rays_d, near, far, viewdirs, **kwargs)
 
     k_extract = ['rgb_map', 'disp_map', 'acc_map']
     ret_list = [all_ret[k] for k in k_extract]
@@ -202,22 +194,24 @@ class Coarse_Fine_Nerf(Base_Nerf):
 
         with gm:
             rgb, disp, acc, extras = render(rays_o, rays_d, **self.train_kwargs)
+            
             # cal loss
             img_loss = img2mse(rgb, target)
             loss = img_loss
             psnr = mse2psnr(img_loss)
+            
+            print(img_loss)
+            # if 'rgb0' in extras:
+            #     img_loss0 = img2mse(extras['rgb0'], target)
+            #     loss = loss + img_loss0
+            #     psnr0 = mse2psnr(img_loss0)
 
-            if 'rgb0' in extras:
-                img_loss0 = img2mse(extras['rgb0'], target)
-                loss = loss + img_loss0
-                psnr0 = mse2psnr(img_loss0)
+            # sparsity_loss = self.train_kwargs['sparse_loss_weight']*(extras["sparsity_loss"].sum() + extras["sparsity_loss0"].sum())
+            # loss = loss + sparsity_loss
 
-            sparsity_loss = self.train_kwargs['sparse_loss_weight']*(extras["sparsity_loss"].sum() + extras["sparsity_loss0"].sum())
-            loss = loss + sparsity_loss
-
-            # add Total Variation loss
-            tv_loss = self.train_kwargs['tv_loss_weight'] * self.fine_net.hash_net.get_tv_loss()
-            loss = loss + tv_loss
+            # # add Total Variation loss
+            # tv_loss = self.train_kwargs['tv_loss_weight'] * self.fine_net.hash_net.get_tv_loss()
+            # loss = loss + tv_loss
             
             if now_epoch > 1:
                 self.train_kwargs['tv_loss_weight'] = 0.0
@@ -227,11 +221,11 @@ class Coarse_Fine_Nerf(Base_Nerf):
 
         loss_dict = {
             'img_loss': img_loss,
-            'img_loss0': img_loss0,
-            'psnr': psnr,
-            'psnr0': psnr0,
-            'sparsity_loss': sparsity_loss,
-            'tv_loss': tv_loss
+            # 'img_loss0': img_loss0,
+            # 'psnr': psnr,
+            # 'psnr0': psnr0,
+            # 'sparsity_loss': sparsity_loss,
+            # 'tv_loss': tv_loss
         }
         return loss_dict
 

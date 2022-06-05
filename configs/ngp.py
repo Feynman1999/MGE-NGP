@@ -80,6 +80,7 @@ data = dict(
         type=dataset_type,
         root_path=data_root,
         pipeline=train_pipeline,
+        rays_per_sample = 128,
         mode = 'train'
     ),
     val=dict(
@@ -106,7 +107,7 @@ lr_config = dict(
 checkpoint_config = dict(interval=1)
 
 log_config = dict(
-    interval=50,
+    interval=500,
     hooks=[
         dict(type="TextLoggerHook"),
     ],
