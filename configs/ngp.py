@@ -74,13 +74,13 @@ test_pipeline = [
 ]
 
 data = dict(
-    samples_per_gpu=1, # 4 * 1024
+    samples_per_gpu=4, # 4 * 1024
     workers_per_gpu=4,
     train=dict(
         type=dataset_type,
         root_path=data_root,
         pipeline=train_pipeline,
-        rays_per_sample = 32,
+        rays_per_sample = 1024,
         mode = 'train'
     ),
     val=dict(
@@ -97,17 +97,17 @@ data = dict(
     ),
 )
 
-optimizer = dict(type='Adam', lr=1e-4, betas=(0.9, 0.999), weight_decay=2e-6)
+optimizer = dict(type='Adam', lr=1e-2, betas=(0.9, 0.999), weight_decay=2e-6)
 optimizer_config = dict(grad_clip=dict(max_norm=35, norm_type=2))
 
 lr_config = dict(
-    type="one_cycle", lr_max=0.004, div_factor=10.0, pct_start=0.4,
+    type="one_cycle", lr_max=0.02, div_factor=20.0, pct_start=0.4,
 )
 
 checkpoint_config = dict(interval=1)
 
 log_config = dict(
-    interval=500,
+    interval=50000,
     hooks=[
         dict(type="TextLoggerHook"),
     ],

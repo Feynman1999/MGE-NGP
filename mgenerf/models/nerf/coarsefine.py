@@ -128,30 +128,30 @@ def render_rays(rays_o, rays_d, near, far, viewdirs,
     rgb_map, disp_map, acc_map, weights, depth_map, sparsity_loss = raw2outputs(raw, z_vals, rays_d, raw_noise_std, white_bkgd)
     # # [b, 3]  [b, ] [b, ] [b, 64] [b, ] [b, ]
 
-    # # sample 
-    # rgb_map_0, disp_map_0, acc_map_0, sparsity_loss_0 = rgb_map, disp_map, acc_map, sparsity_loss
+    # sample 
+    rgb_map_0, disp_map_0, acc_map_0, sparsity_loss_0 = rgb_map, disp_map, acc_map, sparsity_loss
 
-    # z_vals_mid = .5 * (z_vals[...,1:] + z_vals[...,:-1])
-    # z_samples = sample_pdf(z_vals_mid, weights[...,1:-1], N_importance, det=(perturb==0.))
-    # z_samples = z_samples.detach()
+    z_vals_mid = .5 * (z_vals[...,1:] + z_vals[...,:-1])
+    z_samples = sample_pdf(z_vals_mid, weights[...,1:-1], N_importance, det=(perturb==0.))
+    z_samples = z_samples.detach()
 
-    # z_vals, _ = F.sort(F.concat([z_vals, z_samples], -1), descending=False)
+    z_vals, _ = F.sort(F.concat([z_vals, z_samples], -1), descending=False)
     
-    # pts = rays_o[..., None, :] + rays_d[..., None, :] * z_vals[..., :, None] # [N_rays, N_samples + N_importance, 3]
+    pts = F.expand_dims(rays_o, axis=-2) + F.expand_dims(rays_d, axis=-2) * F.expand_dims(z_vals, axis=-1) # [N_rays, N_samples + N_importance, 3]
 
-    # raw = fine_net(pts, viewdirs)
+    raw = fine_net(pts, viewdirs)
 
-    # rgb_map, disp_map, acc_map, weights, depth_map, sparsity_loss = raw2outputs(raw, z_vals, rays_d, raw_noise_std, white_bkgd)
+    rgb_map, disp_map, acc_map, weights, depth_map, sparsity_loss = raw2outputs(raw, z_vals, rays_d, raw_noise_std, white_bkgd)
 
     ret = {'rgb_map' : rgb_map, 'disp_map' : disp_map, 'acc_map' : acc_map, 'sparsity_loss': sparsity_loss}
     if retraw:
         ret['raw'] = raw
 
-    # ret['rgb0'] = rgb_map_0
-    # ret['disp0'] = disp_map_0
-    # ret['acc0'] = acc_map_0
-    # ret['sparsity_loss0'] = sparsity_loss_0
-    # ret['z_std'] = F.std(z_samples, axis=-1)  # [N_rays]
+    ret['rgb0'] = rgb_map_0
+    ret['disp0'] = disp_map_0
+    ret['acc0'] = acc_map_0
+    ret['sparsity_loss0'] = sparsity_loss_0
+    ret['z_std'] = F.std(z_samples, axis=-1)  # [N_rays]
 
     return ret
 
@@ -203,12 +203,12 @@ class Coarse_Fine_Nerf(Base_Nerf):
             loss = img_loss
             psnr = mse2psnr(img_loss)
             
-            print(img_loss)
-            # if 'rgb0' in extras:
-            #     img_loss0 = img2mse(extras['rgb0'], target)
-            #     loss = loss + img_loss0
-            #     psnr0 = mse2psnr(img_loss0)
+            if 'rgb0' in extras:
+                img_loss0 = img2mse(extras['rgb0'], target)
+                loss = loss + img_loss0
+                psnr0 = mse2psnr(img_loss0)
 
+            print(img_loss, img_loss0)
             # sparsity_loss = self.train_kwargs['sparse_loss_weight']*(extras["sparsity_loss"].sum() + extras["sparsity_loss0"].sum())
             # loss = loss + sparsity_loss
 

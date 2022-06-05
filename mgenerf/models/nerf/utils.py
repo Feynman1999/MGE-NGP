@@ -15,9 +15,9 @@ def mge_search_sorted(cdf, u):
     cdf_N, N1 = cdf.shape
     N, N2 = u.shape
     assert cdf_N == N
-    cdf = cdf[:, None] # [N, 1, N1]
+    cdf = F.expand_dims(cdf, axis=1) # [N, 1, N1]
     cdf = F.broadcast_to(cdf, (N, N2, N1))
-    u = u[:, :, None] # [N, N2, 1]
+    u = F.expand_dims(u, axis=2) # [N, N2, 1]
     res = F.sum((u > cdf).astype(np.int32), axis=-1) # [N, N2]
     return res
 
