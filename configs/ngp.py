@@ -80,7 +80,7 @@ data = dict(
         type=dataset_type,
         root_path=data_root,
         pipeline=train_pipeline,
-        rays_per_sample = 128,
+        rays_per_sample = 32,
         mode = 'train'
     ),
     val=dict(

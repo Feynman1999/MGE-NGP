@@ -4,7 +4,7 @@ import megengine as mge
 import megengine.module as M
 import megengine.functional as F
 from .basenerf import Base_Nerf
-from .utils import sample_pdf
+from .utils import sample_pdf, cumprod
 import numpy as np
 
 img2mse = lambda x, y : F.mean((x-y)**2)
@@ -47,7 +47,7 @@ def raw2outputs(raw, z_vals, rays_d, raw_noise_std=0, white_bkgd=False):
     dists = F.concat([dists, F.full(dists[..., :1].shape, 1e10)], -1)  # [N_rays, N_samples]
     # 距离间隔系数（不是真正距离）
 
-    dists = dists * F.norm(rays_d[..., None, :], axis=-1) # [N_rays, N_samples]
+    dists = dists * F.norm(F.expand_dims(rays_d, axis=-2), axis=-1) # [N_rays, N_samples]
 
     rgb = F.sigmoid(raw[..., :3])  # [N_rays, N_samples, 3]
     
@@ -58,25 +58,28 @@ def raw2outputs(raw, z_vals, rays_d, raw_noise_std=0, white_bkgd=False):
     # sigma_loss = sigma_sparsity_loss(raw[...,3])
     alpha, before_exp = raw2alpha(raw[..., 3] + noise, dists)  # [N_rays, N_samples]
     N_rays = before_exp.shape[0]
-    weights = alpha * F.exp(
-        F.cumsum(F.concat([F.zeros((N_rays, 1)), before_exp], -1), axis=1)[:, :-1]
-    )
-
+    # weights = alpha * F.exp(
+    #     F.cumsum(F.concat([F.zeros((N_rays, 1)), before_exp], -1), axis=1)[:, :-1]
+    # )
+    weights = alpha * cumprod(
+            F.concat([F.ones((N_rays, 1)), 1.0 - alpha + 1e-10], -1), -1
+        )[:, :-1]
+    
     rgb_map = F.sum(F.expand_dims(weights, axis=-1) * rgb, -2)  # [N_rays, 3]
 
     depth_map = F.sum(weights * z_vals, -1) # [N, ]
-    acc_map = F.sum(weights, -1) # [N, ]
+    acc_map = weights.sum(axis = 1) # [N, ]
 
     disp_map = 1.0 / F.maximum(
         1e-10 * F.ones_like(depth_map), depth_map / acc_map
     )
     
     if white_bkgd:
-        rgb_map = rgb_map + (1.0 - acc_map[..., None])
+        rgb_map = rgb_map + (1.0 - F.expand_dims(acc_map, axis=-1))
 
     # Calculate weights sparsity loss
     mask = acc_map > 0.5
-    probs = weights+1e-5
+    probs = weights + 1e-5
     probs = probs / probs.sum(-1, keepdims=True)
 
     logits = probs_to_logits(probs)
@@ -115,8 +118,9 @@ def render_rays(rays_o, rays_d, near, far, viewdirs,
         t_rand = mge.random.uniform(low=0, high=1, size=z_vals.shape)
         z_vals = lower + (upper - lower) * t_rand
 
-    pts = rays_o[..., None, :] + rays_d[..., None, :] * z_vals[..., :, None] # [N_rays, N_samples, 3]
-
+    # pts = rays_o[..., None, :] + rays_d[..., None, :] * z_vals[..., :, None] # [N_rays, N_samples, 3]
+    pts = F.expand_dims(rays_o, axis=-2) + F.expand_dims(rays_d, axis=-2) * F.expand_dims(z_vals, axis=-1)
+    
     raw = coarse_net(pts, viewdirs)
 
     # [b, 64, 4]
@@ -172,8 +176,6 @@ class Coarse_Fine_Nerf(Base_Nerf):
         self.fine_net = build_backbone(fine_net)
 
         self.train_kwargs  = {
-            'coarse_net' : self.coarse_net,
-            'fine_net': self.fine_net,
             'near' : train_cfg.near,
             'far' : train_cfg.far,
             'N_samples' : train_cfg.N_samples,
@@ -193,7 +195,8 @@ class Coarse_Fine_Nerf(Base_Nerf):
         target = target.reshape(-1, 3)
 
         with gm:
-            rgb, disp, acc, extras = render(rays_o, rays_d, **self.train_kwargs)
+            rgb, disp, acc, extras = render(rays_o, rays_d, coarse_net = self.coarse_net,
+            fine_net = self.fine_net, **self.train_kwargs)
             
             # cal loss
             img_loss = img2mse(rgb, target)

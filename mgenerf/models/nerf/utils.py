@@ -60,3 +60,17 @@ def sample_pdf(bins, weights, N_samples, det=False):
 
     return samples
 
+
+def cumprod(x: mge.Tensor, axis: int):
+    dim = x.ndim
+    axis = axis if axis > 0 else axis + dim
+    num_loop = x.shape[axis]
+    t_shape = [i + 1 if i < axis else i for i in range(dim)]
+    t_shape[axis] = 0
+    x = x.transpose(*t_shape)
+    assert len(x) == num_loop
+    cum_val = F.ones(x[0].shape)
+    for i in range(num_loop):
+        cum_val *= x[i]
+        x[i] = cum_val
+    return x.transpose(*t_shape)

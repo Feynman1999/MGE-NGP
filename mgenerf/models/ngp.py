@@ -1,3 +1,4 @@
+from cv2 import VideoWriter
 import megengine as mge
 from .registry import BACKBONES
 import megengine.module as M
@@ -33,7 +34,7 @@ class NGP(M.Module):
         locations = F.reshape(locations, (-1, x))
         locations = self.hash_net(locations)
         viewdirs = self.embedder_view(viewdirs) # [num_rays, dim]
-        viewdirs = F.broadcast_to(viewdirs[:, None], (num_rays, num_samples, self.embedder_view.out_dim))
+        viewdirs = F.broadcast_to(F.expand_dims(viewdirs, axis=1), (num_rays, num_samples, self.embedder_view.out_dim))
         viewdirs = F.reshape(viewdirs, (-1, self.embedder_view.out_dim))
         output = self.implicit_net(locations, viewdirs)
         return output.reshape((num_rays, num_samples, output.shape[-1]))
