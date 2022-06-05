@@ -7,12 +7,12 @@ from ..registry import BACKBONES
 @BACKBONES.register_module
 class PositionalEncoding(M.Module):
     def __init__(self, multires, log_sampling = True, include_input = True):
-		self.input_dims = 2
-		self.multires = multires
-		self.log_sampling = log_sampling
-		self.include_input = include_input
-		self.periodic_fns = [F.sin, F.cos]
-		self.create_embedding_fn()
+        self.input_dims = 2
+        self.multires = multires
+        self.log_sampling = log_sampling
+        self.include_input = include_input
+        self.periodic_fns = [F.sin, F.cos]
+        self.create_embedding_fn()
 
     def create_embedding_fn(self):
         embed_fns = []

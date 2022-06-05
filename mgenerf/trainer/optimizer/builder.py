@@ -34,22 +34,3 @@ def build_gradmanager(module):
     world_size = dist.get_world_size()
     gm = GradManager().attach(module.parameters(), callbacks=[dist.make_allreduce_cb("mean")] if world_size > 1 else None)
     return gm
-
-
-def build_learning_rate_scheduler(optimizer, config, total_step):
-    lr_scheduler = None
-    learning_rate_type = config.type
-    if learning_rate_type == "one_cycle":
-        lr_scheduler = OneCycle(
-            optimizer,
-            total_step,
-            config.lr_max,
-            config.moms,
-            config.div_factor,
-            config.pct_start,
-        )
-
-    elif lr_scheduler is None:
-        raise ValueError("Learning_rate %s not supported." % learning_rate_type)
-
-    return lr_scheduler

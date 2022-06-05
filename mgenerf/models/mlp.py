@@ -54,9 +54,8 @@ class MLP(M.Module):
             
             self.color_net.append(M.Linear(in_dim, out_dim, bias=False))
 
-    def forward(self, x):
-        input_pts, input_views = F.split(x, [self.input_ch, self.input_ch_views], axis=-1)
-
+    def forward(self, input_pts, input_views):
+        
         # sigma
         h = input_pts
         for l in range(self.num_layers):

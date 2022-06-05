@@ -10,15 +10,3 @@ class Base_Nerf(M.Module):
 
     def forward(self, x):
         pass
-	
-    @abstractmethod
-    def train_step(self, batchdata, now_epoch, now_iter):
-        """All subclasses should overwrite this function"""
-
-    @abstractmethod
-    def test_step(self, batchdata, **kwargs):
-        """All subclasses should overwrite this function"""
-
-    @abstractmethod
-    def cal_for_eval(self):
-        """All subclasses should overwrite this function"""

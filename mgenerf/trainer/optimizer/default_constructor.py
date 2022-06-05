@@ -1,5 +1,5 @@
-from det3d.utils import get_root_logger, build_from_cfg
-from det3d.utils.misc import is_list_of
+from mgenerf.utils import get_root_logger, build_from_cfg
+from mgenerf.utils import is_list_of
 from .builder import OPTIMIZERS
 import numpy as np
 

@@ -140,22 +140,6 @@ class Trainer(object):
         optimizer = self.optimizer if save_optimizer else None
         save_checkpoint(self.model, filepath, optimizer=optimizer, meta=meta)
 
-    def batch_processor(self, model, data, train_mode, **kwargs):
-        if train_mode:
-            losses = model(data, return_loss=True) # dict of list
-            self.call_hook("after_forward")
-            loss, log_vars = parse_second_losses(losses)
-            del losses
-
-            outputs = dict(
-                loss=loss, log_vars=log_vars, batchsize=len(data["num_voxels"])
-            )
-            self.call_hook("after_parse_loss")
-
-            return outputs
-        else:
-            return model(data, return_loss=False)
-
     def train(self, data_loader, now_epoch, **kwargs):
         self.model.train()
         self.mode = "train"
@@ -175,10 +159,11 @@ class Trainer(object):
 
             self.call_hook("before_train_iter")
 
-            outputs = self.batch_processor(self.model, data_batch, train_mode=True, **kwargs)
+            outputs = self.model.train_step(data_batch, now_epoch = now_epoch, 
+            gm = self.grad_manager, optim = self.optimizer, **kwargs)
 
             if not isinstance(outputs, dict):
-                raise TypeError("batch_processor() must return a dict")
+                raise TypeError("model's train_step must return a dict")
             
             if "log_vars" in outputs:
                 self.log_buffer.update(outputs["log_vars"], outputs["batchsize"])
@@ -191,9 +176,6 @@ class Trainer(object):
         self._epoch += 1
 
     def val(self, data_loader, **kwargs):
-        """
-            一个epoch
-        """
         self.model.eval()
         self.mode = "val"
         self.data_loader = data_loader

@@ -6,6 +6,43 @@ import megengine.functional as F
 from megengine.module import init
 
 
+def total_variation_loss(embeddings, min_resolution, max_resolution, level, log2_hashmap_size, n_levels):
+    # Get resolution
+    b = F.exp((F.log(max_resolution) - F.log(min_resolution))/(n_levels-1))
+    resolution = F.floor(min_resolution * (b ** level))
+
+    # Cube size to apply TV loss
+    min_cube_size = min_resolution - 1
+    max_cube_size = 50 # can be tuned
+    
+    if min_cube_size > max_cube_size:
+        raise RuntimeError("")
+
+    cube_size = F.floor(F.clip(resolution/10.0, min_cube_size, max_cube_size)).astype(np.int32)
+
+    # Sample cuboid
+    min_vertex = np.random.randint(0, resolution-cube_size, (3,), dtype=np.int32)
+    idx = min_vertex + np.stack([np.arange(cube_size+1, dtype=np.int32) for _ in range(3)], axis=-1)
+    np_mesh = np.meshgrid(idx[:,0], idx[:,1], idx[:,2])
+    mesh = mge.tensor(np_mesh, dtype=np.int32)
+    cube_indices = F.stack(mesh, axis=-1)
+
+    hashed_indices = hash(cube_indices, log2_hashmap_size)
+    cube_embeddings = embeddings(hashed_indices)
+    #hashed_idx_offset_x = hash(idx+torch.tensor([1,0,0]), log2_hashmap_size)
+    #hashed_idx_offset_y = hash(idx+torch.tensor([0,1,0]), log2_hashmap_size)
+    #hashed_idx_offset_z = hash(idx+torch.tensor([0,0,1]), log2_hashmap_size)
+
+    # Compute loss
+    #tv_x = torch.pow(embeddings(hashed_idx)-embeddings(hashed_idx_offset_x), 2).sum()
+    #tv_y = torch.pow(embeddings(hashed_idx)-embeddings(hashed_idx_offset_y), 2).sum()
+    #tv_z = torch.pow(embeddings(hashed_idx)-embeddings(hashed_idx_offset_z), 2).sum()
+    tv_x = F.pow(cube_embeddings[1:,:,:,:]-cube_embeddings[:-1,:,:,:], 2).sum()
+    tv_y = F.pow(cube_embeddings[:,1:,:,:]-cube_embeddings[:,:-1,:,:], 2).sum()
+    tv_z = F.pow(cube_embeddings[:,:,1:,:]-cube_embeddings[:,:,:-1,:], 2).sum()
+    return (tv_x + tv_y + tv_z) / cube_size
+
+
 BOX_OFFSETS = mge.tensor([[[i,j,k] for i in [0, 1] for j in [0, 1] for k in [0, 1]]], dtype = np.int32) # [1,8,3]
 
 
@@ -15,14 +52,15 @@ def hash(coords, log2_hashmap_size):
     log2T:  logarithm of T w.r.t 2
     '''
     coords = coords.numpy()
+    assert coords.dtype == np.int32
     primes = [1, 2654435761, 805459861, 3674653429, 2097192037, 1434869437, 2165219737]
-    b, num , dim = coords.shape
-    xor_result = np.zeros((b, num), dtype=np.int32) # [b,8]
 
-    for i in range(dim):
+    xor_result = np.zeros_like(coords[..., 0]) # [b,8]
+
+    for i in range(coords.shape[-1]):
         xor_result ^= coords[..., i]*primes[i]
 
-    return mge.tensor(((1<<log2_hashmap_size)-1) & xor_result, dtype=np.int32) # 消除高位
+    return mge.tensor((((1<<log2_hashmap_size)-1) & xor_result).astype(np.int32)) # 消除高位
 
 
 def get_voxel_vertices(xyz, bounding_box, resolution, log2_hashmap_size):
@@ -62,7 +100,7 @@ class HashEncoding(M.Module):
                        ):
         super(HashEncoding, self).__init__()
 
-        self.bounding_box = bounding_box # need to sure
+        self.bounding_box = (mge.tensor(bounding_box[0]) , mge.tensor(bounding_box[1]))  # need to sure
         self.n_levels = n_levels
 
         assert n_levels > 10
@@ -122,3 +160,14 @@ class HashEncoding(M.Module):
             x_embedded_all.append(x_embedded)
 
         return F.concat(x_embedded_all, axis=-1)
+
+    def get_tv_loss(self):
+        n_levels = self.n_levels
+        min_res = self.base_resolution
+        max_res = self.finest_resolution
+        log2_hashmap_size = self.log2_hashmap_size
+        TV_loss = sum(total_variation_loss(self.embeddings[i], 
+                                        min_res, max_res,
+                                        i, log2_hashmap_size,
+                                        n_levels=n_levels) for i in range(n_levels))
+        return TV_loss

@@ -11,6 +11,8 @@ def train_nerf(model, dataset, cfg, logger):
 
     total_steps = cfg.total_epochs * len(data_loaders[0])
     
+    logger.info("total_epochs, steps per epoch, total_steps: ", cfg.total_epochs, len(data_loaders[0]), total_steps)
+
     optimizer = build_optimizer(model, cfg.optimizer)
     grad_manager = build_gradmanager(model)
     lr_scheduler = build_onecyclelr(optimizer, cfg.lr_config, total_steps)

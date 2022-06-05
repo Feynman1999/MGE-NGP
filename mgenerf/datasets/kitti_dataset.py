@@ -95,6 +95,7 @@ class KittiDataset(BaseDataset):
 
         self.rays_rgb = rays_rgb
         self.total_rays = rays_rgb.shape[0]
+        self.intrinsics = intrinsics_left
 
     def evaluate(self, results):
         assert self.mode == "eval"
@@ -115,10 +116,11 @@ class KittiDataset(BaseDataset):
 
         res_dict = {
             'rays' : sample[:2], # [2, x, 3]  
-            'target' : sample[2]  # [x, 3]           
+            'target' : sample[2],  # [x, 3] 
+            'intrinsics'  : self.intrinsics  # [4, ]        
         }
         
-        return self.pipeline(res_dict)
+        return res_dict
 
     def __len__(self):
         """Length of the dataset.
