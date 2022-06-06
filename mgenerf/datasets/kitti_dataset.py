@@ -23,9 +23,9 @@ def get_rays_np(H, W, K, c2w):
 
 
 @DATASETS.register_module
-class KittiDataset(BaseDataset):
-    def __init__(self, pipeline, root_path, rays_per_sample = 1024, consider_imgs = 50, mode='train'):
-        super().__init__(pipeline, mode)
+class KittiTrainingDataset(BaseDataset):
+    def __init__(self, pipeline, root_path, rays_per_sample = 1024, consider_imgs = 50):
+        super().__init__(pipeline)
         self.root_path = root_path
         self.rays_per_sample = rays_per_sample
         self.consider_imgs = consider_imgs
@@ -128,3 +128,83 @@ class KittiDataset(BaseDataset):
             int: Length of the dataset.
         """
         return self.total_rays // self.rays_per_sample 
+
+
+@DATASETS.register_module
+class KittiTestingDataset(BaseDataset):
+    """
+        每一个item是一张图像 （外参，内参）
+    """
+    def __init__(self, pipeline, root_path, consider_imgs = 50):
+        super().__init__(pipeline, mode = 'test')
+        self.root_path = root_path
+        self.consider_imgs = consider_imgs
+        self.load_annotations()
+
+    def load_annotations(self):
+        calib_path = os.path.join(self.root_path, "calib.txt")
+        pose_path = os.path.join(self.root_path, "poses.txt")
+        image_left_path = sorted(glob.glob(self.root_path +  "/image_left/*.png"))
+        n_frames = len(image_left_path)
+        if n_frames > self.consider_imgs:
+            image_left_path = image_left_path[: self.consider_imgs]
+            n_frames = self.consider_imgs
+            print('only consider first {} imgs'.format(n_frames))
+
+        self.image_left_path = image_left_path
+
+        with open(calib_path, "r") as fr:
+            calib = np.loadtxt(fr, usecols=(1, 6, 3, 7, 4, 8, 12)) # fu fv cx cy x x x (0 0 0 for p0)  # [5,7]
+            
+        poses = []
+        with open(pose_path, "r") as f:
+            for line in f.readlines():
+                ans = []
+                for item in line.split(" "):
+                    ans.append(float(item))
+                if len(ans) != 12:
+                    continue
+
+                poses.append(np.array(ans).reshape(3,4))
+
+                if len(poses) == n_frames:
+                    break
+
+        poses = np.stack(poses) # [N, 3, 4]
+        poses_left = poses.copy()
+
+        # 参考 https://github.com/utiasSTARS/pykitti/blob/master/pykitti/odometry.py
+        baseline_left = np.append(-calib[2, 4:] / calib[2, 0], 1.0)  # (4, )
+        poses_left[:, :, 3] = poses @ baseline_left # (N, 3, 4)
+
+        # poses_left = [
+        #         CameraPoseTransform.get_pose_from_matrix(pose)
+        #         for pose in poses_left
+        #     ]
+        
+        intrinsics_left = calib[2, :4] # (4, )
+
+        self.intrinsics = intrinsics_left
+        self.poses_left = poses_left
+
+    def evaluate(self, results):
+        assert self.mode == "eval"
+        pass
+
+    def __getitem__(self, idx):
+        path = self.image_left_path[idx]
+        img = cv2.imread(path)
+        res_dict = {
+            'img' : img, # [h,w, 3]  
+            'pose' : self.poses_left[idx],  # [3, 4] 
+            'intrinsics'  : self.intrinsics  # [4, ]        
+        }
+        
+        return res_dict
+
+    def __len__(self):
+        """Length of the dataset.
+        Returns:
+            int: Length of the dataset.
+        """
+        return len(self.image_left_path)

@@ -63,7 +63,7 @@ test_cfg = dict()
 
 # dataset settings
 dataset_type = "KittiDataset"
-data_root =  r"C:\Users\76397\Desktop\taichi\kitti\00" # "/data/dataset-3840/datasets/kitti/00" #
+data_root =  r"/data/dataset-3840/datasets/kitti/00" # "/data/dataset-3840/datasets/kitti/00" #
 
 train_pipeline = [
     
