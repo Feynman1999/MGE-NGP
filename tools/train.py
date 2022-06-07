@@ -47,6 +47,9 @@ def main():
         datasets.append(build_dataset(cfg.data.val))
 
     model = build_nerf(cfg.model, train_cfg=cfg.train_cfg, test_cfg=cfg.test_cfg)
+
+    
+
     logger.info(f"model structure: {model}")
 
     train_nerf(

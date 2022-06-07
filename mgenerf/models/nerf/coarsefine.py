@@ -6,6 +6,7 @@ import megengine.functional as F
 from .basenerf import Base_Nerf
 from .utils import sample_pdf, cumprod
 import numpy as np
+import megengine.distributed as dist
 
 img2mse = lambda x, y : F.mean((x-y)**2)
 
@@ -104,10 +105,11 @@ def render_rays(rays_o, rays_d, near, far, viewdirs,
                 white_bkgd=False,
                 raw_noise_std=0.,
                 **kwargs):
-    t_vals = F.linspace(0., 1., num=N_samples)
+    #t_vals = F.linspace(0., 1., num=N_samples)
+    t_vals = mge.tensor(np.logspace(0., 1., num=N_samples, base=2.0), dtype = np.float32) - 1.0
 
     if not lindisp:
-        z_vals = near * (1.-t_vals) + far * (t_vals) # [B, N_samples]
+        z_vals = near  + (far  - near ) * t_vals # [B, N_samples]
     else:
         z_vals = 1./(1./near * (1.-t_vals) + 1./far * (t_vals))
 
@@ -157,7 +159,26 @@ def render_rays(rays_o, rays_d, near, far, viewdirs,
 
 def render(rays_o, rays_d, near = 0., far = 1., **kwargs):
     viewdirs = rays_d / F.norm(rays_d, axis=1, keepdims=True) # [x, 3]
-    near, far = near * F.ones_like(rays_d[..., :1]), far * F.ones_like(rays_d[..., :1])
+    
+    if 'bounding_box' in kwargs.keys():
+        bounding_box = kwargs['bounding_box']
+        # get near and far according to bounding_box
+        # [N, 1]
+        bounding_box = mge.tensor(bounding_box, dtype=np.float32) # [2,3]
+        tmin = (bounding_box[0:1, :] - rays_o) / (rays_d + 1e-15) 
+        tmax = (bounding_box[1:2, :] - rays_o) / (rays_d + 1e-15)
+        near = near * F.ones_like(rays_d[..., :1])
+        far = F.where(tmin > tmax, tmin, tmax).min(axis=-1, keepdims=True) 
+        
+
+        if F.max(near > far) > 0:
+            raise RuntimeError("bounding box is too small!")
+
+        if F.max(near + 1 > far) > 0:
+            print(" sampled ray < 1 meters ! you can change box to larger")
+
+    else:
+        near, far = near * F.ones_like(rays_d[..., :1]), far * F.ones_like(rays_d[..., :1])
     
     all_ret = render_rays(rays_o, rays_d, near, far, viewdirs, **kwargs)
 
@@ -178,6 +199,7 @@ class Coarse_Fine_Nerf(Base_Nerf):
         self.train_kwargs  = {
             'near' : train_cfg.near,
             'far' : train_cfg.far,
+            'bounding_box' : train_cfg.bounding_box,
             'N_samples' : train_cfg.N_samples,
             'N_importance' : train_cfg.N_importance,
             'retraw' : train_cfg.retraw,
@@ -202,13 +224,14 @@ class Coarse_Fine_Nerf(Base_Nerf):
             img_loss = img2mse(rgb, target)
             loss = img_loss
             psnr = mse2psnr(img_loss)
-            
+            # psnr = dist.functional.all_reduce_sum(psnr) / dist.get_world_size()
+
             if 'rgb0' in extras:
                 img_loss0 = img2mse(extras['rgb0'], target)
                 loss = loss + img_loss0
                 psnr0 = mse2psnr(img_loss0)
 
-            print(img_loss, img_loss0, psnr, psnr0)
+            print(img_loss, img_loss0, psnr)
             # sparsity_loss = self.train_kwargs['sparse_loss_weight']*(extras["sparsity_loss"].sum() + extras["sparsity_loss0"].sum())
             # loss = loss + sparsity_loss
 

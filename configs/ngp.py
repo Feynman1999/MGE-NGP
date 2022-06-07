@@ -6,6 +6,8 @@ embedder_view = dict(
     degree = 4
 )
 
+bounding_box = [[-15, -5, 0], [15, 20, 80]]
+
 # model settings
 model = dict(
     type="Coarse_Fine_Nerf",
@@ -13,8 +15,8 @@ model = dict(
         type = 'NGP',
         hash_net = dict(
             type = "HashEncoding",
-            bounding_box = [[-15, -5, 0], [15, 20, 80]], # 空间大小
-            finest_resolution = 2048,
+            bounding_box = bounding_box, # 空间大小
+            finest_resolution = 1024,
             log2_hashmap_size = 19,
         ),
         implicit_net = dict(
@@ -31,8 +33,8 @@ model = dict(
         type = 'NGP',
         hash_net = dict(
             type = "HashEncoding",
-            bounding_box = [[-15, -5, 0], [15, 20, 80]], # 空间大小
-            finest_resolution = 2048,
+            bounding_box = bounding_box, # 空间大小
+            finest_resolution = 1024,
             log2_hashmap_size = 19,
         ),
         implicit_net = dict(
@@ -48,8 +50,9 @@ model = dict(
 )
 
 train_cfg = dict(
-    near = 0.3,
+    near = 0.1,
     far = 30,
+    bounding_box = bounding_box,
     N_samples = 64,  # number of coarse samples per ray
     N_importance = 64,  # number of additional fine samples per ray
     retraw=True,
@@ -63,7 +66,7 @@ test_cfg = dict()
 
 # dataset settings
 dataset_type = "KittiTrainingDataset"
-data_root =  r"C:\Users\76397\Desktop\taichi\kitti\00" # "/data/dataset-3840/datasets/kitti/00" #
+data_root =  r"/data/dataset-3840/datasets/kitti/00" # "/data/dataset-3840/datasets/kitti/00" #
 
 train_pipeline = [
     
@@ -74,7 +77,7 @@ test_pipeline = [
 ]
 
 data = dict(
-    samples_per_gpu=2, # 4 * 1024
+    samples_per_gpu=8, # 4 * 1024
     workers_per_gpu=4,
     train=dict(
         type=dataset_type,

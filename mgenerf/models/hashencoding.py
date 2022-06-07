@@ -43,9 +43,6 @@ def total_variation_loss(embeddings, min_resolution, max_resolution, level, log2
     return (tv_x + tv_y + tv_z) / cube_size
 
 
-BOX_OFFSETS = mge.tensor([[[i,j,k] for i in [0, 1] for j in [0, 1] for k in [0, 1]]], dtype = np.int32) # [1,8,3]
-
-
 def hash(coords, log2_hashmap_size):
     '''
     coords: this function can process upto 7 dim coordinates  [b,8,3]
@@ -63,7 +60,7 @@ def hash(coords, log2_hashmap_size):
     return mge.tensor((((1<<log2_hashmap_size)-1) & xor_result).astype(np.int32)) # 消除高位
 
 
-def get_voxel_vertices(xyz, bounding_box, resolution, log2_hashmap_size):
+def get_voxel_vertices(xyz, bounding_box, resolution, log2_hashmap_size, BOX_OFFSETS):
     '''
     xyz: 3D coordinates of samples. B x 3
     bounding_box: min and max x,y,z coordinates of object bbox
@@ -99,6 +96,7 @@ class HashEncoding(M.Module):
                        base_resolution=16
                        ):
         super(HashEncoding, self).__init__()
+        self.BOX_OFFSETS = mge.tensor([[[i,j,k] for i in [0, 1] for j in [0, 1] for k in [0, 1]]], dtype = np.int32) # [1,8,3]
 
         self.bounding_box = (mge.tensor(bounding_box[0]) , mge.tensor(bounding_box[1]))  # need to sure
         self.n_levels = n_levels
@@ -152,7 +150,7 @@ class HashEncoding(M.Module):
         for i in range(self.n_levels):
             resolution = F.floor(self.base_resolution * (self.b **i))
             voxel_min_vertex, voxel_max_vertex, hashed_voxel_indices = get_voxel_vertices(x, self.bounding_box,
-                                                resolution, self.log2_hashmap_size)
+                                                resolution, self.log2_hashmap_size, self.BOX_OFFSETS)
             
             voxel_embedds = self.embeddings[i](hashed_voxel_indices) # input: [b, 8]  output: [b,8,2]
 

@@ -1,6 +1,7 @@
 from mgenerf.datasets import build_dataloader
 from .trainer import Trainer
 from .optimizer import build_optimizer, build_gradmanager, build_onecyclelr
+import megengine.distributed as dist
 
 
 def train_nerf(model, dataset, cfg, logger):
@@ -12,6 +13,8 @@ def train_nerf(model, dataset, cfg, logger):
     total_steps = cfg.total_epochs * len(data_loaders[0])
     
     logger.info("total_epochs, steps per epoch, total_steps: ", cfg.total_epochs, len(data_loaders[0]), total_steps)
+
+    # dist.bcast_list_(model.tensors())
 
     optimizer = build_optimizer(model, cfg.optimizer)
     grad_manager = build_gradmanager(model)
