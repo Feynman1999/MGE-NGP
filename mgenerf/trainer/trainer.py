@@ -186,31 +186,25 @@ class Trainer(object):
         if self.rank == 0:
             prog_bar = ProgressBar(len(data_loader.dataset))
 
-        detections = {}
-        cpu_device = torch.device("cpu")
-
         for i, data_batch in enumerate(data_loader):
             self._inner_iter = i
             self.call_hook("before_val_iter")
-            outputs = self.batch_processor(self.model, data_batch, train_mode=False, **kwargs)
+
+            outputs = self.model.test_step(data_batch, **kwargs)
 
             for output in outputs:
-                token = output["metadata"]["token"]
-                for k, v in output.items():
-                    if k not in ["metadata",]:
-                        output[k] = v.to(cpu_device)
-                detections.update({token: output,})
-
                 if self.rank == 0:
                     for _ in range(self.world_size):
                         prog_bar.update()
 
         group_barrier() # 同步
 
-        all_predictions = all_gather(detections)
+        # all_predictions = all_gather(detections)
 
         if self.rank != 0:
             return
+
+        # save and eval
 
         predictions = {}
         for p in all_predictions:
