@@ -7,10 +7,8 @@ import argparse
 from mgenerf.utils import get_root_logger, Config
 from mgenerf.datasets import build_dataset
 from mgenerf.datasets import build_dataloader
-import open3d as o3d
 import numpy as np
-from tensorboardX import SummaryWriter
-from mpl_toolkits import mplot3d
+
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -43,7 +41,7 @@ def get_rays_np(H, W, K, c2w):
 	return rays_o, rays_d # [h,w,3]  [h,w,3]
 
 
-def add_line(start, end, ax, num = 50):
+def add_line(start, end, ax, num = 2):
 	points = start + np.linspace(0, 1, num).reshape(num, 1) * (end - start)
 
 	ax.plot3D(points[:, 0], points[:, 1], points[:, 2], 'gray')
@@ -55,13 +53,6 @@ def main():
 	dataset = build_dataset(cfg.data.test)
 	data_loader = build_dataloader(dataset, cfg.data.samples_per_gpu, cfg.data.workers_per_gpu, shuffle=False)
 
-	writer = SummaryWriter()
-
-	# res_mesh = []
-	# res_faces = []
-	# res_colors =[]
-	
-	# now_index = 0
 
 	fig = plt.figure()
 	ax = plt.axes(projection="3d")
@@ -73,36 +64,6 @@ def main():
 
 		rays_o, rays_d = get_rays_np(h, w, intrinsics, c2w = pose)
 
-		# mesh = np.array([
-		# 	[rays_o[0, 0, :],
-		# 	rays_d[0, 0, :],
-		# 	rays_d[0, w-1, :],
-		# 	rays_d[h-1, 0, :],
-		# 	rays_d[h-1, w-1, :]]
-		# ], dtype = np.float32)
-		
-		
-		# faces = np.array([
-		# 	[[0, 1, 2],
-		# 	[0, 2, 4],
-		# 	[0, 3, 4],
-		# 	[0, 1, 3],
-		# 	[1, 2, 3],
-		# 	[2, 3, 4]]
-		# ], dtype=np.int32) + now_index
-		# now_index += 6
-
-		# colors = np.array([255,0,0], dtype=np.uint8)
-		# colors = np.broadcast_to(colors, faces.shape)
-
-		# res_mesh.append(mesh)
-		# res_faces.append(faces)
-		# res_colors.append(colors)
-
-
-		# use matplotlib
-		# four o to four d
-
 		add_line(rays_o[0, 0:1, :], rays_d[0, 0:1, :], ax = ax)
 		add_line(rays_o[0, 0:1, :], rays_d[0, w-1:w, :], ax = ax)
 		add_line(rays_o[0, 0:1, :], rays_d[h-1, 0:1, :], ax = ax)
@@ -112,11 +73,6 @@ def main():
 		add_line(rays_d[h-1, w-1:w, :], rays_d[0, w-1:w, :], ax = ax)
 		add_line(rays_d[h-1, w-1:w, :], rays_d[h-1, 0:1, :], ax = ax)
 
-	# mesh = np.concatenate(res_mesh, axis=1)
-	# faces = np.concatenate(res_faces, axis=1)
-	# colors = np.concatenate(res_colors, axis=1)
-
-	# writer.add_mesh('mesh', vertices=mesh, colors=colors, faces=faces)
 
 	plt.show()
 

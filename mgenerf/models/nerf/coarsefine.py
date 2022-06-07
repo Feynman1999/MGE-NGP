@@ -208,7 +208,7 @@ class Coarse_Fine_Nerf(Base_Nerf):
                 loss = loss + img_loss0
                 psnr0 = mse2psnr(img_loss0)
 
-            print(img_loss, img_loss0)
+            print(img_loss, img_loss0, psnr, psnr0)
             # sparsity_loss = self.train_kwargs['sparse_loss_weight']*(extras["sparsity_loss"].sum() + extras["sparsity_loss0"].sum())
             # loss = loss + sparsity_loss
 

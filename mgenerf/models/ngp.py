@@ -10,8 +10,12 @@ import megengine.functional as F
 class NGP(M.Module):
     def __init__(self, hash_net, implicit_net, embedder_view):
         super(NGP, self).__init__()
+        
+        if isinstance(hash_net, M.Module):
+            self.hash_net = hash_net
+        else:
+            self.hash_net = build_backbone(hash_net)
 
-        self.hash_net = build_backbone(hash_net)
         self.embedder_view  =  build_backbone(embedder_view)
         
         # 根据一些参数 计算mlp模型的一些输入维度 并更新字典
