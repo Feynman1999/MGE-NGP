@@ -1,2 +1,5 @@
-* near and far setting (bounds)
-0.3 ~ 10 ?
+* add val and test
+* test use taichi
+
+
+* train use taichi
