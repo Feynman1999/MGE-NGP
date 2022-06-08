@@ -12,7 +12,7 @@ def train_nerf(model, dataset, cfg, logger):
 
     total_steps = cfg.total_epochs * len(data_loaders[0])
     
-    logger.info("total_epochs, steps per epoch, total_steps: ", cfg.total_epochs, len(data_loaders[0]), total_steps)
+    logger.info("total_epochs, steps per epoch, total_steps: {}, {}, {}".format(cfg.total_epochs, len(data_loaders[0]), total_steps))
 
     # dist.bcast_list_(model.tensors())
 

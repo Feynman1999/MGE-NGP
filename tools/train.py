@@ -29,7 +29,7 @@ def main():
         cfg.resume_from = args.resume_from
 
     cfg.gpus = dist.get_world_size()
-    cfg.lr_config.lr_max = cfg.lr_config.lr_max * cfg.gpus
+    cfg.lr_config.max_lr = cfg.lr_config.max_lr * cfg.gpus
     logger = get_root_logger(cfg.log_level)
 
     if dist.get_rank() == 0:

@@ -53,8 +53,8 @@ train_cfg = dict(
     near = 0.1,
     far = 30,
     bounding_box = bounding_box,
-    N_samples = 64,  # number of coarse samples per ray
-    N_importance = 64,  # number of additional fine samples per ray
+    N_samples = 128,  # number of coarse samples per ray
+    N_importance = 128,  # number of additional fine samples per ray
     retraw=True,
     lindisp=False,
     perturb=1.,
@@ -99,11 +99,12 @@ data = dict(
     ),
 )
 
-optimizer = dict(type='AdamW', lr=0.003, betas=(0.9, 0.99), weight_decay=1e-6)
-optimizer_config = dict(grad_clip=dict(max_norm=35, norm_type=2))
+paramwise_cfg=dict(custom_keys={'implicit_net': dict(weight_decay=1e6)})
+optimizer = dict(type='AdamW', lr=0.005, betas=(0.9, 0.99), eps = 1e-15, weight_decay=1e-12, paramwise_cfg = paramwise_cfg)
+
 
 lr_config = dict(
-    type="one_cycle", lr_max=0.003, div_factor=20.0, pct_start=0.4,
+    type="one_cycle", max_lr=0.005, div_factor=10.0, pct_start=0.1, final_div_factor = 1e2
 )
 
 checkpoint_config = dict(interval=1)
@@ -115,7 +116,7 @@ log_config = dict(
     ],
 )
 
-total_epochs = 20
+total_epochs = 5
 log_level = "INFO"
 work_dir = "./workdirs/ngp"
 load_from = None 

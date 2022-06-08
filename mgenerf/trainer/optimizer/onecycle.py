@@ -4,7 +4,7 @@ from megengine.optimizer import Optimizer
 import math
 
 def build_onecyclelr(optim, config, total_steps):
-    return OneCycleLR(optim, config.lr_max, total_steps=total_steps, pct_start=config.pct_start, div_factor=config.div_factor)
+    return OneCycleLR(optim, total_steps=total_steps, **config)
 
 class OneCycleLR(LRScheduler):
     r"""Sets the learning rate of each parameter group according to the
@@ -103,7 +103,8 @@ class OneCycleLR(LRScheduler):
                  max_momentum=0.95,
                  div_factor=25.,
                  final_div_factor=1e4,
-                 current_epoch=-1):
+                 current_epoch=-1, 
+                 **kwargs):
 
         # Validate optimizer
         if not isinstance(optimizer, Optimizer):

@@ -152,6 +152,7 @@ class Trainer(object):
 
         for i, data_batch in enumerate(data_loader):
             global_step = base_step + i
+
             if self.lr_scheduler is not None:
                 self.lr_scheduler.step(global_step)
 
@@ -169,6 +170,7 @@ class Trainer(object):
                 self.log_buffer.update(outputs["log_vars"], outputs["batchsize"])
             
             self.outputs = outputs
+
             self.call_hook("after_train_iter")
             self._iter += 1
 
@@ -263,6 +265,10 @@ class Trainer(object):
 
                 for _ in range(epochs):
                     if mode == "train":
+                        try:
+                            data_loaders[i].dataset.shuffle_all_rays()
+                        except:
+                            pass
                         epoch_runner(data_loaders[i], self.epoch, **kwargs)
                     elif mode == "val":
                         epoch_runner(data_loaders[i], **kwargs) 

@@ -126,7 +126,7 @@ class KittiTrainingDataset(BaseDataset):
 	def shuffle_all_rays(self):
 		print("Shuffle all rays!")
 		# need to set seed for multi gpu
-		self.rays_rgb = np.random.shuffle(self.rays_rgb)
+		np.random.shuffle(self.rays_rgb)
 
 	def __getitem__(self, idx):
 		# given idx 
