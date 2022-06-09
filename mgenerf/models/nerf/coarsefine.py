@@ -7,6 +7,8 @@ from .basenerf import Base_Nerf
 from .utils import sample_pdf, cumprod
 import numpy as np
 import megengine.distributed as dist
+from progress.bar import Bar
+
 
 img2mse = lambda x, y : F.mean((x-y)**2)
 
@@ -212,9 +214,10 @@ class Coarse_Fine_Nerf(Base_Nerf):
             'N_importance' : test_cfg.N_importance,
             'lindisp' : test_cfg.lindisp,
             'perturb' : False,
+            'num_cols' : test_cfg.num_cols,
         }
 
-    def train_step(self, batchdata, now_epoch, gm, optim, **kwargs):
+    def train_step(self, batchdata, now_epoch, gm, optim):
         rays = mge.tensor(batchdata['rays'], dtype=np.float32) # [batch, 2, N, 3]
         target = mge.tensor(batchdata['target'], dtype=np.float32)
         rays_o = rays[:, 0, ...].reshape(-1, 3)
@@ -262,20 +265,38 @@ class Coarse_Fine_Nerf(Base_Nerf):
         }
         return loss_dict
 
-    def test_step(self, batchdata, **kwargs):
+    def test_step(self, batchdata):
         # given rays, return img
-        rays = mge.tensor(batchdata['rays'], dtype=np.float32) # [batch, 2, N, 3]
-        rays_o = rays[0, 0, ...]
-        rays_d = rays[0, 1, ...]
+        rays_o = mge.tensor(batchdata['rays_o'][0], dtype=np.float32) # [H, W, 3]
+        rays_d = mge.tensor(batchdata['rays_d'][0], dtype=np.float32) # [H, W, 3]
 
-        rgb, disp, acc, extras = render(rays_o, rays_d, coarse_net = self.coarse_net,
-        fine_net = self.fine_net, **self.test_kwargs)
+        res_img = F.zeros_like(rays_o)
+        
+        H,W,_ = res_img.shape
+
+        num_cols = self.test_kwargs['num_cols']
+
+        with Bar('rendering', max=H // num_cols + H % num_cols > 0) as bar:
+            for i in range(H // num_cols):
+                rays_o_block = rays_o[i*num_cols : i*num_cols + num_cols, :, :].reshape(-1, 3)
+                rays_d_block = rays_d[i*num_cols : i*num_cols + num_cols, :, :].reshape(-1, 3)
+
+                rgb, disp, acc, extras = render(rays_o_block, rays_d_block, coarse_net = self.coarse_net,
+                fine_net = self.fine_net, **self.test_kwargs)
+
+                res_img [i*num_cols : i*num_cols + num_cols, :, :] = rgb.reshape(num_cols, W, 3)
+
+            if H % num_cols > 0:
+                rays_o_block = rays_o[H - H % num_cols : , :, :].reshape(-1, 3)
+                rays_d_block = rays_d[H - H % num_cols : , :, :].reshape(-1, 3)
+
+                rgb, disp, acc, extras = render(rays_o_block, rays_d_block, coarse_net = self.coarse_net,
+                fine_net = self.fine_net, **self.test_kwargs)
+
+                res_img [H - H % num_cols, :, :] = rgb.reshape(H % num_cols, W, 3)
 
         output_dict = {
-            'rgb': rgb,
-            'disp': disp,
-            'acc': acc,
-            'extras' : extras
+            'rgb': res_img,
         }
 
         return output_dict

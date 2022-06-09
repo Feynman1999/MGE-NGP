@@ -30,3 +30,11 @@ def train_nerf(model, dataset, cfg, logger):
         trainer.load_checkpoint(cfg.load_from)
 
     trainer.run(data_loaders, cfg.workflow, cfg.total_epochs)
+
+
+def test_nerf(model, dataset, cfg, logger):
+    data_loaders = [build_dataloader(dataset, 1, cfg.data.workers_per_gpu, shuffle=False)]
+
+    trainer = Trainer(model, None, None, cfg.work_dir, logger)
+    trainer.load_checkpoint(cfg.load_from)
+    trainer.run(data_loaders, cfg.workflow, 1)

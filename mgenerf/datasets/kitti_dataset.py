@@ -155,7 +155,7 @@ class KittiTrainingDataset(BaseDataset):
 @DATASETS.register_module
 class KittiTestingDataset(BaseDataset):
 	"""
-		每一个item是一张图像 （外参，内参）
+		每一个item是一张图像
 	"""
 	def __init__(self, pipeline, root_path, consider_imgs = 50):
 		super().__init__(pipeline, mode = 'test')
@@ -216,10 +216,16 @@ class KittiTestingDataset(BaseDataset):
 	def __getitem__(self, idx):
 		path = self.image_left_path[idx]
 		img = cv2.imread(path)
+		H,W,_ = img.shape
+		
+		rays_o, rays_d = get_rays_np(H, W, K = self.intrinsics, c2w = self.poses_left[idx])
+
 		res_dict = {
 			'img' : img, # [h,w, 3]  
 			'pose' : self.poses_left[idx],  # [3, 4] 
-			'intrinsics'  : self.intrinsics  # [4, ]        
+			'intrinsics'  : self.intrinsics,  # [4, ]
+			'rays_o' : rays_o,
+			'rays_d' : rays_d        
 		}
 		
 		return res_dict

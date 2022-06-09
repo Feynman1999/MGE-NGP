@@ -9,7 +9,6 @@ from .builder import obj_from_dict
 from . import hooks
 from .hooks import Hook, get_priority, CheckpointHook
 from .load_save import load_checkpoint, save_checkpoint
-from .utils.progressbar import ProgressBar
 from megengine.distributed import group_barrier
 
 
@@ -140,7 +139,8 @@ class Trainer(object):
         optimizer = self.optimizer if save_optimizer else None
         save_checkpoint(self.model, filepath, optimizer=optimizer, meta=meta)
 
-    def train(self, data_loader, now_epoch, **kwargs):
+
+    def train(self, data_loader, now_epoch):
         self.model.train()
         self.mode = "train"
         self.data_loader = data_loader
@@ -161,7 +161,7 @@ class Trainer(object):
             self.call_hook("before_train_iter")
 
             outputs = self.model.train_step(data_batch, now_epoch = now_epoch, 
-            gm = self.grad_manager, optim = self.optimizer, **kwargs)
+            gm = self.grad_manager, optim = self.optimizer)
 
             if not isinstance(outputs, dict):
                 raise TypeError("model's train_step must return a dict")
@@ -177,7 +177,26 @@ class Trainer(object):
         self.call_hook("after_train_epoch")
         self._epoch += 1
 
-    def val(self, data_loader, **kwargs):
+
+    def test(self, data_loader):
+        self.model.eval()
+        self.mode = "test"
+        self.data_loader = data_loader
+        self.call_hook("before_test_epoch")
+
+        for i, data_batch in enumerate(data_loader):
+            self._inner_iter = i
+            self.call_hook("before_test_iter")
+
+            outputs = self.model.test_step(data_batch)
+            self.outputs = outputs
+
+            self.call_hook("after_test_iter")
+     
+        self.call_hook("after_test_epoch")
+        self._epoch += 1
+
+    def val(self, data_loader):
         self.model.eval()
         self.mode = "val"
         self.data_loader = data_loader
@@ -185,19 +204,15 @@ class Trainer(object):
 
         self.logger.info(f"work dir: {self.work_dir}")
 
-        if self.rank == 0:
-            prog_bar = ProgressBar(len(data_loader.dataset))
-
         for i, data_batch in enumerate(data_loader):
             self._inner_iter = i
             self.call_hook("before_val_iter")
 
-            outputs = self.model.test_step(data_batch, **kwargs)
+            outputs = self.model.test_step(data_batch)
 
             for output in outputs:
                 if self.rank == 0:
-                    for _ in range(self.world_size):
-                        prog_bar.update()
+                    pass
 
         group_barrier() # 同步
 
@@ -236,7 +251,7 @@ class Trainer(object):
 
         self.logger.info("resumed epoch %d, iter %d", self.epoch, self.iter)
 
-    def run(self, data_loaders, workflow, max_epochs, **kwargs):
+    def run(self, data_loaders, workflow, max_epochs):
         assert isinstance(data_loaders, list)
         assert is_list_of(workflow, tuple)
         assert len(data_loaders) == len(workflow)
@@ -269,9 +284,9 @@ class Trainer(object):
                             data_loaders[i].dataset.shuffle_all_rays()
                         except:
                             pass
-                        epoch_runner(data_loaders[i], self.epoch, **kwargs)
+                        epoch_runner(data_loaders[i], self.epoch)
                     elif mode == "val":
-                        epoch_runner(data_loaders[i], **kwargs) 
+                        epoch_runner(data_loaders[i])
                     else:
                         raise NotImplementedError("")
 
