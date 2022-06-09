@@ -39,7 +39,7 @@ def main():
             os.system("cp %s %s/" % (args.config, backup_dir))
         except:
             pass
-        logger.info(f"Backup config file to {cfg.work_dir}/det3d")
+        logger.info(f"Backup config file to {cfg.work_dir}")
 
     datasets = [build_dataset(cfg.data.train)]
 

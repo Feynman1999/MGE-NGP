@@ -231,13 +231,17 @@ class Coarse_Fine_Nerf(Base_Nerf):
                 loss = loss + img_loss0
                 psnr0 = mse2psnr(img_loss0)
 
-            print(img_loss, img_loss0, psnr)
+            
+            
             # sparsity_loss = self.train_kwargs['sparse_loss_weight']*(extras["sparsity_loss"].sum() + extras["sparsity_loss0"].sum())
             # loss = loss + sparsity_loss
 
-            # # add Total Variation loss
-            # tv_loss = self.train_kwargs['tv_loss_weight'] * self.fine_net.hash_net.get_tv_loss()
-            # loss = loss + tv_loss
+            # add Total Variation loss
+            tv_loss = self.train_kwargs['tv_loss_weight'] * self.fine_net.hash_net.get_tv_loss()
+
+            print(img_loss, img_loss0, psnr, tv_loss)
+
+            loss = loss + tv_loss
             
             if now_epoch > 1:
                 self.train_kwargs['tv_loss_weight'] = 0.0

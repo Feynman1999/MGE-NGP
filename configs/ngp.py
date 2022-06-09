@@ -59,7 +59,7 @@ train_cfg = dict(
     lindisp=False,
     perturb=1.,
     sparse_loss_weight = 1e-10,
-    tv_loss_weight = 1e-6
+    tv_loss_weight = 1e-4
 )
 
 test_cfg = dict()
@@ -100,11 +100,11 @@ data = dict(
 )
 
 paramwise_cfg=dict(custom_keys={'implicit_net': dict(weight_decay=1e6)})
-optimizer = dict(type='AdamW', lr=0.005, betas=(0.9, 0.99), eps = 1e-15, weight_decay=1e-12, paramwise_cfg = paramwise_cfg)
+optimizer = dict(type='AdamW', lr=0.01, betas=(0.9, 0.99), eps = 1e-15, weight_decay=1e-12, paramwise_cfg = paramwise_cfg)
 
 
 lr_config = dict(
-    type="one_cycle", max_lr=0.005, div_factor=10.0, pct_start=0.1, final_div_factor = 1e2
+    type="one_cycle", max_lr=0.01, div_factor=10.0, pct_start=0.1, final_div_factor = 1e2
 )
 
 checkpoint_config = dict(interval=1)
@@ -118,7 +118,7 @@ log_config = dict(
 
 total_epochs = 5
 log_level = "INFO"
-work_dir = "./workdirs/ngp"
+work_dir = "./workdirs/ngp_tv"
 load_from = None 
 resume_from = None
 workflow = [("train", 1),]
