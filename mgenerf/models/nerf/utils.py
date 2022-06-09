@@ -22,7 +22,7 @@ def mge_search_sorted(cdf, u):
     return res
 
 # Hierarchical sampling (section 5.2)
-def sample_pdf(bins, weights, N_samples, det=False):
+def sample_pdf(bins, weights, N_samples, perturb=True):
     """
         bins: N, N1-1  一阶段已经取的点的中点
         weights:  对应的权重  N, N1 - 2  (去掉首尾) 
@@ -36,12 +36,12 @@ def sample_pdf(bins, weights, N_samples, det=False):
     cdf = F.concat([F.zeros_like(cdf[..., :1]), cdf], -1)  # (N, N1-1)
 
     # Take uniform samples
-    if det:
+    if perturb:
+        u = mge.random.uniform(size=list(cdf.shape[:-1]) + [N_samples])
+    else:
         u = F.linspace(0.0, 1.0, N_samples)
         u = F.broadcast_to(u, list(cdf.shape[:-1]) + [N_samples])
-    else:
-        u = mge.random.uniform(size=list(cdf.shape[:-1]) + [N_samples])
-
+        
     # Invert CDF
     inds = mge_search_sorted(cdf, u) # int
     below = F.maximum(F.zeros_like(inds), inds - 1)

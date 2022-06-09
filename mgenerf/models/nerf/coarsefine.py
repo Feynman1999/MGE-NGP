@@ -56,7 +56,6 @@ def raw2outputs(raw, z_vals, rays_d, raw_noise_std=0, white_bkgd=False):
     if raw_noise_std > 0.:
         noise = mge.random.normal(size=raw[..., 3].shape) * raw_noise_std
 
-    # sigma_loss = sigma_sparsity_loss(raw[...,3])
     alpha, before_exp = raw2alpha(raw[..., 3] + noise, dists)  # [N_rays, N_samples]
     N_rays = before_exp.shape[0]
     # weights = alpha * F.exp(
@@ -99,9 +98,8 @@ def render_rays(rays_o, rays_d, near, far, viewdirs,
                 N_importance,
                 coarse_net,
                 fine_net,
-                retraw=True,
                 lindisp=False,
-                perturb=1.,
+                perturb=True,
                 white_bkgd=False,
                 raw_noise_std=0.,
                 **kwargs):
@@ -113,7 +111,7 @@ def render_rays(rays_o, rays_d, near, far, viewdirs,
     else:
         z_vals = 1./(1./near * (1.-t_vals) + 1./far * (t_vals))
 
-    if perturb > 0.:
+    if perturb:
         mids = .5 * (z_vals[...,1:] + z_vals[...,:-1]) # N_samples- 1 个中点
         upper = F.concat([mids, z_vals[...,-1:]], -1)
         lower = F.concat([z_vals[...,:1], mids], -1)
@@ -134,7 +132,7 @@ def render_rays(rays_o, rays_d, near, far, viewdirs,
     rgb_map_0, disp_map_0, acc_map_0, sparsity_loss_0 = rgb_map, disp_map, acc_map, sparsity_loss
 
     z_vals_mid = .5 * (z_vals[...,1:] + z_vals[...,:-1])
-    z_samples = sample_pdf(z_vals_mid, weights[...,1:-1], N_importance, det=(perturb==0.))
+    z_samples = sample_pdf(z_vals_mid, weights[...,1:-1], N_importance, perturb=perturb)
     z_samples = z_samples.detach()
 
     z_vals, _ = F.sort(F.concat([z_vals, z_samples], -1), descending=False)
@@ -146,8 +144,6 @@ def render_rays(rays_o, rays_d, near, far, viewdirs,
     rgb_map, disp_map, acc_map, weights, depth_map, sparsity_loss = raw2outputs(raw, z_vals, rays_d, raw_noise_std, white_bkgd)
 
     ret = {'rgb_map' : rgb_map, 'disp_map' : disp_map, 'acc_map' : acc_map, 'sparsity_loss': sparsity_loss}
-    if retraw:
-        ret['raw'] = raw
 
     ret['rgb0'] = rgb_map_0
     ret['disp0'] = disp_map_0
@@ -202,11 +198,20 @@ class Coarse_Fine_Nerf(Base_Nerf):
             'bounding_box' : train_cfg.bounding_box,
             'N_samples' : train_cfg.N_samples,
             'N_importance' : train_cfg.N_importance,
-            'retraw' : train_cfg.retraw,
             'lindisp' : train_cfg.lindisp,
             'perturb' : train_cfg.perturb,
             'sparse_loss_weight' : train_cfg.sparse_loss_weight,
             'tv_loss_weight' : train_cfg.tv_loss_weight
+        }
+
+        self.test_kwargs  = {
+            'near' : test_cfg.near,
+            'far' : test_cfg.far,
+            'bounding_box' : test_cfg.bounding_box,
+            'N_samples' : test_cfg.N_samples,
+            'N_importance' : test_cfg.N_importance,
+            'lindisp' : test_cfg.lindisp,
+            'perturb' : False,
         }
 
     def train_step(self, batchdata, now_epoch, gm, optim, **kwargs):
@@ -233,16 +238,14 @@ class Coarse_Fine_Nerf(Base_Nerf):
 
             
             
-            # sparsity_loss = self.train_kwargs['sparse_loss_weight']*(extras["sparsity_loss"].sum() + extras["sparsity_loss0"].sum())
-            # loss = loss + sparsity_loss
+            sparsity_loss = self.train_kwargs['sparse_loss_weight']*(extras["sparsity_loss"].sum() + extras["sparsity_loss0"].sum())
+            loss = loss + sparsity_loss
 
             # add Total Variation loss
-            tv_loss = self.train_kwargs['tv_loss_weight'] * self.fine_net.hash_net.get_tv_loss()
+            # tv_loss = self.train_kwargs['tv_loss_weight'] * self.fine_net.hash_net.get_tv_loss()
 
-            print(img_loss, img_loss0, psnr, tv_loss)
+            print(img_loss, img_loss0, psnr, sparsity_loss)
 
-            loss = loss + tv_loss
-            
             if now_epoch > 1:
                 self.train_kwargs['tv_loss_weight'] = 0.0
 
@@ -260,7 +263,22 @@ class Coarse_Fine_Nerf(Base_Nerf):
         return loss_dict
 
     def test_step(self, batchdata, **kwargs):
-        pass
+        # given rays, return img
+        rays = mge.tensor(batchdata['rays'], dtype=np.float32) # [batch, 2, N, 3]
+        rays_o = rays[0, 0, ...]
+        rays_d = rays[0, 1, ...]
+
+        rgb, disp, acc, extras = render(rays_o, rays_d, coarse_net = self.coarse_net,
+        fine_net = self.fine_net, **self.test_kwargs)
+
+        output_dict = {
+            'rgb': rgb,
+            'disp': disp,
+            'acc': acc,
+            'extras' : extras
+        }
+
+        return output_dict
 
     def cal_for_eval(self):
         pass

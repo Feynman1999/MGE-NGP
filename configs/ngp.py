@@ -55,11 +55,10 @@ train_cfg = dict(
     bounding_box = bounding_box,
     N_samples = 128,  # number of coarse samples per ray
     N_importance = 128,  # number of additional fine samples per ray
-    retraw=True,
     lindisp=False,
-    perturb=1.,
-    sparse_loss_weight = 1e-10,
-    tv_loss_weight = 1e-4
+    perturb=True,
+    sparse_loss_weight = 1e-8,
+    tv_loss_weight = 1e-8
 )
 
 test_cfg = dict()
