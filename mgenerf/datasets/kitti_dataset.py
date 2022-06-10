@@ -221,6 +221,7 @@ class KittiTestingDataset(BaseDataset):
 		rays_o, rays_d = get_rays_np(H, W, K = self.intrinsics, c2w = self.poses_left[idx])
 
 		res_dict = {
+			'idx' : idx,
 			'img' : img, # [h,w, 3]  
 			'pose' : self.poses_left[idx],  # [3, 4] 
 			'intrinsics'  : self.intrinsics,  # [4, ]

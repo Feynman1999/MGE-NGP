@@ -8,7 +8,7 @@ from .utils import sample_pdf, cumprod
 import numpy as np
 import megengine.distributed as dist
 from progress.bar import Bar
-
+import cv2
 
 img2mse = lambda x, y : F.mean((x-y)**2)
 
@@ -163,12 +163,11 @@ def render(rays_o, rays_d, near = 0., far = 1., **kwargs):
         # get near and far according to bounding_box
         # [N, 1]
         bounding_box = mge.tensor(bounding_box, dtype=np.float32) # [2,3]
-        tmin = (bounding_box[0:1, :] - rays_o) / (rays_d + 1e-15) 
-        tmax = (bounding_box[1:2, :] - rays_o) / (rays_d + 1e-15)
+        tmin = (bounding_box[0:1, :] - rays_o) / rays_d
+        tmax = (bounding_box[1:2, :] - rays_o) / rays_d
         near = near * F.ones_like(rays_d[..., :1])
-        far = F.where(tmin > tmax, tmin, tmax).min(axis=-1, keepdims=True) 
+        far = F.where(tmin > tmax, tmin, tmax).min(axis=-1, keepdims=True)  - 1e-6
         
-
         if F.max(near > far) > 0:
             raise RuntimeError("bounding box is too small!")
 
@@ -276,7 +275,7 @@ class Coarse_Fine_Nerf(Base_Nerf):
 
         num_cols = self.test_kwargs['num_cols']
 
-        with Bar('rendering', max=H // num_cols + H % num_cols > 0) as bar:
+        with Bar('rendering', max=H // num_cols + (H % num_cols > 0)) as bar:
             for i in range(H // num_cols):
                 rays_o_block = rays_o[i*num_cols : i*num_cols + num_cols, :, :].reshape(-1, 3)
                 rays_d_block = rays_d[i*num_cols : i*num_cols + num_cols, :, :].reshape(-1, 3)
@@ -285,6 +284,7 @@ class Coarse_Fine_Nerf(Base_Nerf):
                 fine_net = self.fine_net, **self.test_kwargs)
 
                 res_img [i*num_cols : i*num_cols + num_cols, :, :] = rgb.reshape(num_cols, W, 3)
+                bar.next()
 
             if H % num_cols > 0:
                 rays_o_block = rays_o[H - H % num_cols : , :, :].reshape(-1, 3)
@@ -294,6 +294,9 @@ class Coarse_Fine_Nerf(Base_Nerf):
                 fine_net = self.fine_net, **self.test_kwargs)
 
                 res_img [H - H % num_cols, :, :] = rgb.reshape(H % num_cols, W, 3)
+
+        idx = batchdata['idx'][0]
+        cv2.imwrite("{}.png".format(idx), (res_img.numpy()*255).astype(np.uint8))
 
         output_dict = {
             'rgb': res_img,

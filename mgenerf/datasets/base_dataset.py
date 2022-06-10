@@ -2,6 +2,7 @@ from megengine.data.dataset import Dataset
 from .pipelines.compose import Compose
 from abc import ABCMeta, abstractmethod
 
+
 class BaseDataset(Dataset, metaclass=ABCMeta):
     """Base class for Dataset.
     All datasets should subclass it.

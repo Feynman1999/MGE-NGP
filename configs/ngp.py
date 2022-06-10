@@ -61,10 +61,18 @@ train_cfg = dict(
     tv_loss_weight = 1e-8
 )
 
-test_cfg = dict()
+test_cfg = dict(
+    near = 0.1,
+    far = 30,
+    bounding_box = bounding_box,
+    N_samples = 128,  # number of coarse samples per ray
+    N_importance = 128,  # number of additional fine samples per ray
+    lindisp=False,
+    num_cols = 2)
 
 # dataset settings
 dataset_type = "KittiTrainingDataset"
+test_dataset_type =  "KittiTestingDataset"
 data_root =  r"/data/dataset-3840/datasets/kitti/00" # "/data/dataset-3840/datasets/kitti/00" #
 
 train_pipeline = [
@@ -85,16 +93,15 @@ data = dict(
         rays_per_sample = 1024,
     ),
     val=dict(
-        type=dataset_type,
+        type=test_dataset_type,
         root_path=data_root,
         pipeline=test_pipeline,
         mode = 'eval'
     ),
     test=dict(
-        type=dataset_type,
+        type=test_dataset_type,
         root_path=data_root,
         pipeline=test_pipeline,
-        mode = 'test'
     ),
 )
 
@@ -118,6 +125,6 @@ log_config = dict(
 total_epochs = 5
 log_level = "INFO"
 work_dir = "./workdirs/ngp_tv"
-load_from = None 
+load_from = "/home/chenyuxiang/repos/MGE-NGP/workdirs/ngp/epoch_5.pth" 
 resume_from = None
-workflow = [("train", 1),]
+workflow = [("test", 1),]

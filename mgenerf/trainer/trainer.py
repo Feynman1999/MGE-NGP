@@ -202,17 +202,13 @@ class Trainer(object):
         self.data_loader = data_loader
         self.call_hook("before_val_epoch")
 
-        self.logger.info(f"work dir: {self.work_dir}")
-
         for i, data_batch in enumerate(data_loader):
             self._inner_iter = i
             self.call_hook("before_val_iter")
 
             outputs = self.model.test_step(data_batch)
-
-            for output in outputs:
-                if self.rank == 0:
-                    pass
+            
+            self.call_hook("after_val_iter")
 
         group_barrier() # 同步
 
@@ -285,10 +281,8 @@ class Trainer(object):
                         except:
                             pass
                         epoch_runner(data_loaders[i], self.epoch)
-                    elif mode == "val":
-                        epoch_runner(data_loaders[i])
                     else:
-                        raise NotImplementedError("")
+                        epoch_runner(data_loaders[i])
 
         self.call_hook("after_run")
 
